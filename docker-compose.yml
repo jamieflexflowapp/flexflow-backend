@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: flexflow_db
+    environment:
+      POSTGRES_DB: flexflow
+      POSTGRES_USER: flexflow_user
+      POSTGRES_PASSWORD: flexflow_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - flexflow_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flexflow_user -d flexflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  flexflow_data:
+    driver: local
