@@ -63,8 +63,10 @@ const forecastRoutes    = require('./routes/forecast');
 app.use('/forecast',    forecastRoutes);
 const reportsRoutes         = require('./routes/reports');
 const notificationsRoutes   = require('./routes/notifications');
+const budgetRoutes           = require('./routes/budget');
 app.use('/reports',        reportsRoutes);
 app.use('/notifications',  notificationsRoutes);
+app.use('/budget',         budgetRoutes);
 // Session J: Report Generation Engine ✅ — PHASE 3 COMPLETE
 
 // ── 404 handler ───────────────────────────────────────────────────────────────

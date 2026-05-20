@@ -149,4 +149,53 @@ router.delete('/scenario/:id', async (req, res) => {
   }
 });
 
+
+// ── GET /forecast/month/:month ────────────────────────────────────────────────
+// Detailed breakdown for a specific month — income by source + outgoings
+
+router.get('/month/:month', async (req, res) => {
+  try {
+    const { month } = req.params; // format: YYYY-MM
+    const [year, mon] = month.split('-');
+    const monthStart = `${year}-${mon}-01`;
+    const monthEnd   = new Date(year, mon, 0).toISOString().split('T')[0];
+
+    // Actual income by source for the month
+    const income = await query(
+      `SELECT source_name, SUM(amount) AS total
+       FROM transactions
+       WHERE user_id = $1
+         AND transaction_date BETWEEN $2 AND $3
+         AND is_income = true
+       GROUP BY source_name
+       ORDER BY total DESC`,
+      [req.user.userId, monthStart, monthEnd]
+    );
+
+    // Committed outgoings
+    const outgoings = await query(
+      `SELECT name, amount FROM committed_outgoings
+       WHERE user_id = $1 AND active = true
+       ORDER BY amount DESC`,
+      [req.user.userId]
+    );
+
+    const totalIncome   = income.rows.reduce((s, r) => s + parseFloat(r.total), 0);
+    const totalOutgoing = outgoings.rows.reduce((s, r) => s + parseFloat(r.amount), 0);
+
+    return res.json({
+      month,
+      total_income:   totalIncome,
+      total_outgoing: totalOutgoing,
+      surplus:        totalIncome - totalOutgoing,
+      income_sources: income.rows,
+      outgoings:      outgoings.rows,
+    });
+
+  } catch (err) {
+    console.error('Forecast month error:', err);
+    return res.status(500).json({ error: 'Failed to get month detail.' });
+  }
+});
+
 module.exports = router;
