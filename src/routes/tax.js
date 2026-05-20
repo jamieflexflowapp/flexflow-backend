@@ -158,4 +158,78 @@ router.get('/pot', async (req, res) => {
   }
 });
 
+
+// ── GET /tax/self-assessment ──────────────────────────────────────────────────
+// Self Assessment tracker data — deadline, days remaining, estimated bill
+
+router.get('/self-assessment', async (req, res) => {
+  try {
+    const taxYear   = req.query.tax_year || '2026/27';
+    const deadline  = new Date('2027-01-31');
+    const today     = new Date();
+    const daysLeft  = Math.ceil((deadline - today) / (1000 * 60 * 60 * 24));
+    const taxYearStart = new Date('2026-04-06');
+    const taxYearDays  = 365;
+    const daysPassed   = Math.ceil((today - taxYearStart) / (1000 * 60 * 60 * 24));
+    const yearPct      = Math.min(100, Math.round((daysPassed / taxYearDays) * 100));
+
+    // Get current tax liability
+    const liabilityResult = await query(
+      `SELECT total_tax_liability, it_total, ni_total FROM tax_calculations
+       WHERE user_id = $1 AND tax_year = $2`,
+      [req.user.userId, taxYear]
+    );
+
+    // Get total expenses
+    const expenseResult = await query(
+      `SELECT COALESCE(SUM(deduct_amount), 0) AS total_deductions
+       FROM expense_records
+       WHERE user_id = $1 AND tax_year = $2 AND confirmed = true`,
+      [req.user.userId, taxYear]
+    );
+
+    // Get gross income
+    const incomeResult = await query(
+      `SELECT COALESCE(SUM(amount), 0) AS gross_income
+       FROM transactions
+       WHERE user_id = $1
+         AND transaction_date >= '2026-04-06'
+         AND amount > 0
+         AND is_income = true`,
+      [req.user.userId]
+    );
+
+    const estimatedTax  = parseFloat(liabilityResult.rows[0]?.total_tax_liability) || 0;
+    const totalDeductions = parseFloat(expenseResult.rows[0]?.total_deductions) || 0;
+    const grossIncome   = parseFloat(incomeResult.rows[0]?.gross_income) || 0;
+    const taxableProfit = Math.max(0, grossIncome - totalDeductions);
+
+    // RAG status
+    const ragStatus = daysLeft > 180 ? 'GREEN' : daysLeft > 60 ? 'AMBER' : 'RED';
+
+    return res.json({
+      deadline:         '31 Jan 2027',
+      days_remaining:   daysLeft,
+      rag_status:       ragStatus,
+      tax_year:         taxYear,
+      tax_year_pct:     yearPct,
+      gross_income:     grossIncome,
+      total_deductions: totalDeductions,
+      taxable_profit:   taxableProfit,
+      estimated_tax:    estimatedTax,
+      key_dates: [
+        { label: 'Tax year ends',          date: '5 Apr 2027',  type: 'year_end' },
+        { label: 'Paper return deadline',  date: '31 Oct 2026', type: 'paper'    },
+        { label: 'Online return deadline', date: '31 Jan 2027', type: 'online'   },
+        { label: 'Payment on account 1',  date: '31 Jan 2027', type: 'payment'  },
+        { label: 'Payment on account 2',  date: '31 Jul 2027', type: 'payment'  },
+      ],
+    });
+
+  } catch (err) {
+    console.error('Self assessment error:', err);
+    return res.status(500).json({ error: 'Failed to get self assessment data.' });
+  }
+});
+
 module.exports = router;

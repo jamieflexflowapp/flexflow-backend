@@ -435,6 +435,27 @@ router.post('/mileage', async (req, res) => {
   }
 });
 
+
+// ── DELETE /expenses/mileage/:id ─────────────────────────────────────────────
+// Delete a specific mileage journey
+
+router.delete('/mileage/:id', async (req, res) => {
+  try {
+    const result = await query(
+      `DELETE FROM mileage_log WHERE id = $1 AND user_id = $2`,
+      [req.params.id, req.user.userId]
+    );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Journey not found.' });
+    }
+    await recalcTaxableProfit(req.user.userId);
+    return res.json({ message: 'Journey deleted.' });
+  } catch (err) {
+    console.error('Delete mileage error:', err);
+    return res.status(500).json({ error: 'Failed to delete journey.' });
+  }
+});
+
 // ── GET /expenses/vat ─────────────────────────────────────────────────────────
 
 router.get('/vat', async (req, res) => {

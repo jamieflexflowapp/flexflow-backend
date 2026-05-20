@@ -61,8 +61,10 @@ const runwayRoutes      = require('./routes/runway');
 app.use('/runway',      runwayRoutes);
 const forecastRoutes    = require('./routes/forecast');
 app.use('/forecast',    forecastRoutes);
-const reportsRoutes     = require('./routes/reports');
-app.use('/reports',     reportsRoutes);
+const reportsRoutes         = require('./routes/reports');
+const notificationsRoutes   = require('./routes/notifications');
+app.use('/reports',        reportsRoutes);
+app.use('/notifications',  notificationsRoutes);
 // Session J: Report Generation Engine ✅ — PHASE 3 COMPLETE
 
 // ── 404 handler ───────────────────────────────────────────────────────────────
