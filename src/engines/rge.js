@@ -8,7 +8,7 @@
  * READS ONLY — never recalculates anything. Every number is from an upstream engine.
  *
  * Reports produced:
- *   Monthly PDF      — PLUS + PRO — auto last day of month
+ *   Monthly PDF      — PLUS + PRO — auto 1st of following month (covers previous month)
  *   Quarterly PDF    — PRO only   — end of each calendar quarter
  *   Annual PDF       — PRO only   — end of each tax year (5 April)
  *   Monthly CSV      — ALL tiers  — raw transaction export

@@ -97,6 +97,64 @@ app.listen(PORT, async () => {
     const purged = await purgeExpiredSessions();
     if (purged > 0) console.log(`[FSBE] Purged ${purged} expired scenario sessions.`);
   });
+
+  // Session J: Auto-generate monthly reports on 1st of each month at 06:00
+  // Generates report for PREVIOUS month — e.g. runs 1 Jun, covers May
+  // Updated from spec (was last day of month) per product decision May 2026
+  const { generateMonthlyPDF, generateMonthlyCSV, generateQuarterlyPDF } = require('./engines/rge');
+  const { query: dbQuery } = require('./config/database');
+  cron.schedule('0 6 1 * *', async () => {
+    console.log('[RGE] Monthly report generation starting...');
+    try {
+      const now = new Date();
+      const reportDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const year  = reportDate.getFullYear();
+      const month = reportDate.getMonth() + 1;
+      const users = await dbQuery(
+        "SELECT id FROM users WHERE plan IN ('plus', 'pro') AND onboarding_complete = true"
+      );
+      console.log(`[RGE] Generating for ${users.rows.length} users — ${month}/${year}`);
+      for (const user of users.rows) {
+        try {
+          await generateMonthlyPDF(user.id, year, month);
+          await generateMonthlyCSV(user.id, year, month);
+        } catch (err) {
+          console.error(`[RGE] Failed for user ${user.id}:`, err.message);
+        }
+      }
+      console.log('[RGE] Monthly report generation complete.');
+    } catch (err) {
+      console.error('[RGE] Monthly cron error:', err.message);
+    }
+  });
+
+  // Annual report cron — runs 06:00 on 6 April each year
+  // Covers the tax year that just ended on 5 April (end of day)
+  // e.g. runs 6 Apr 2026 → generates 2025/26 annual report
+  cron.schedule('0 6 6 4 *', async () => {
+    console.log('[RGE] Annual report generation starting...');
+    try {
+      const now = new Date();
+      const taxYearEnd  = now.getFullYear() - 1; // e.g. 2026 run → 2025 start year
+      const taxYear     = `${taxYearEnd}/${String(taxYearEnd + 1).slice(-2)}`; // '2025/26'
+
+      const users = await dbQuery(
+        "SELECT id FROM users WHERE plan = 'pro' AND onboarding_complete = true"
+      );
+      console.log(`[RGE] Generating annual reports for ${users.rows.length} PRO users — ${taxYear}`);
+
+      for (const user of users.rows) {
+        try {
+          await generateQuarterlyPDF(user.id, now.getFullYear(), 'annual');
+        } catch (err) {
+          console.error(`[RGE] Annual failed for user ${user.id}:`, err.message);
+        }
+      }
+      console.log('[RGE] Annual report generation complete.');
+    } catch (err) {
+      console.error('[RGE] Annual cron error:', err.message);
+    }
+  });
 });
 
 module.exports = app;

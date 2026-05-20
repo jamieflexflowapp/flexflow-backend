@@ -2,18 +2,41 @@
 
 /**
  * FlexFlow — Auth Controller
- * Session B — Task 3
+ * Updated Phase 4 — Email verification added
  *
  * JWT strategy:
  *   Access token  — short-lived (15 min), sent with every API request
  *   Refresh token — long-lived (7 days), used only to get a new access token
  *   Refresh token hash stored in users.refresh_token_hash (bcrypt)
  *   On logout: hash is cleared — token is invalidated server-side
+ *
+ * Email verification:
+ *   6-digit code generated at register, stored hashed in DB
+ *   Expires after 15 minutes
+ *   POST /auth/verify-email — validates code, marks user verified
+ *   POST /auth/resend-verification — generates new code, sends new email
  */
 
 const bcrypt = require('bcryptjs');
 const jwt    = require('jsonwebtoken');
+const crypto = require('crypto');
 const { query } = require('../config/database');
+
+// SendGrid — graceful fallback if not installed yet
+let sendVerificationEmail, sendWelcomeEmail;
+try {
+  const sg = require('../utils/sendgrid');
+  sendVerificationEmail = sg.sendVerificationEmail;
+  sendWelcomeEmail      = sg.sendWelcomeEmail;
+} catch (err) {
+  // SendGrid not installed — log code to console during development
+  sendVerificationEmail = async (email, name, code) => {
+    console.log(`[DEV EMAIL] Verification code for ${email}: ${code}`);
+  };
+  sendWelcomeEmail = async (email, name) => {
+    console.log(`[DEV EMAIL] Welcome email sent to ${email}`);
+  };
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -33,73 +56,158 @@ function generateRefreshToken(userId) {
   );
 }
 
+function generateVerificationCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
 function validateEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-function validatePassword(password) {
-  // Minimum 8 chars, at least one letter and one number
-  return password && password.length >= 8 && /[a-zA-Z]/.test(password) && /[0-9]/.test(password);
+function validatePassword(password, firstName, lastName) {
+  if (!password || password.length < 8)         return 'At least 8 characters required.';
+  if (!/[A-Z]/.test(password))                  return 'At least one uppercase letter required.';
+  if (!/[a-z]/.test(password))                  return 'At least one lowercase letter required.';
+  if (!/[0-9]/.test(password))                  return 'At least one number required.';
+  if (firstName && password.toLowerCase().includes(firstName.toLowerCase()))
+    return 'Password cannot contain your name.';
+  if (lastName && password.toLowerCase().includes(lastName.toLowerCase()))
+    return 'Password cannot contain your name.';
+  return null;
 }
 
 // ── POST /auth/register ───────────────────────────────────────────────────────
 
 async function register(req, res) {
   try {
-    const { email, password, full_name } = req.body;
+    const { email, password, first_name, last_name } = req.body;
+    const full_name = [first_name, last_name].filter(Boolean).join(' ') || null;
 
-    // Validate inputs
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required.' });
     }
     if (!validateEmail(email)) {
       return res.status(400).json({ error: 'Please enter a valid email address.' });
     }
-    if (!validatePassword(password)) {
-      return res.status(400).json({
-        error: 'Password must be at least 8 characters and contain at least one letter and one number.'
-      });
+    const pwError = validatePassword(password, first_name, last_name);
+    if (pwError) {
+      return res.status(400).json({ error: pwError });
     }
 
     // Check if email already registered
     const existing = await query(
-      'SELECT id FROM users WHERE email = $1',
+      'SELECT id, email_verified FROM users WHERE email = $1',
       [email.toLowerCase().trim()]
     );
     if (existing.rows.length > 0) {
+      if (!existing.rows[0].email_verified) {
+        return res.status(409).json({
+          error: 'An account with this email exists but is not verified. Please check your inbox or resend the code.',
+          unverified: true
+        });
+      }
       return res.status(409).json({ error: 'An account with this email already exists.' });
     }
 
     // Hash password
     const password_hash = await bcrypt.hash(password, 12);
 
-    // Create user
+    // Generate verification code
+    const code    = generateVerificationCode();
+    const expires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+
+    // Create user (unverified)
     const result = await query(
-      `INSERT INTO users (email, password_hash, full_name)
-       VALUES ($1, $2, $3)
-       RETURNING id, email, full_name, plan, onboarding_complete, created_at`,
-      [email.toLowerCase().trim(), password_hash, full_name || null]
+      `INSERT INTO users (email, password_hash, full_name, email_verified,
+                          verification_code, verification_expires)
+       VALUES ($1, $2, $3, false, $4, $5)
+       RETURNING id, email, full_name, plan, onboarding_complete`,
+      [email.toLowerCase().trim(), password_hash, full_name, code, expires]
     );
     const user = result.rows[0];
 
-    // Generate tokens
+    // Send verification email
+    await sendVerificationEmail(email, first_name || 'there', code);
+
+    return res.status(201).json({
+      message: 'Account created. Please check your email for your verification code.',
+      user_id: user.id,
+      email:   user.email,
+    });
+
+  } catch (err) {
+    console.error('Register error:', err);
+    return res.status(500).json({ error: 'Registration failed. Please try again.' });
+  }
+}
+
+// ── POST /auth/verify-email ───────────────────────────────────────────────────
+
+async function verifyEmail(req, res) {
+  try {
+    const { email, code } = req.body;
+
+    if (!email || !code) {
+      return res.status(400).json({ error: 'Email and verification code are required.' });
+    }
+
+    const result = await query(
+      `SELECT id, full_name, email_verified, verification_code,
+              verification_expires, plan, onboarding_complete
+       FROM users WHERE email = $1`,
+      [email.toLowerCase().trim()]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Account not found.' });
+    }
+
+    const user = result.rows[0];
+
+    if (user.email_verified) {
+      return res.status(400).json({ error: 'This account is already verified.' });
+    }
+
+    if (!user.verification_code || user.verification_code !== code.trim()) {
+      return res.status(400).json({ error: 'Incorrect verification code. Please try again.' });
+    }
+
+    if (new Date() > new Date(user.verification_expires)) {
+      return res.status(400).json({
+        error: 'This code has expired. Please request a new one.',
+        expired: true
+      });
+    }
+
+    // Mark as verified and clear code
+    await query(
+      `UPDATE users
+       SET email_verified = true, verification_code = NULL,
+           verification_expires = NULL, last_login_at = NOW()
+       WHERE id = $1`,
+      [user.id]
+    );
+
+    // Send welcome email
+    await sendWelcomeEmail(email, user.full_name ? user.full_name.split(' ')[0] : 'there');
+
+    // Generate tokens — user is now logged in
     const accessToken  = generateAccessToken(user.id);
     const refreshToken = generateRefreshToken(user.id);
+    const refreshHash  = await bcrypt.hash(refreshToken, 10);
 
-    // Store refresh token hash
-    const refreshHash = await bcrypt.hash(refreshToken, 10);
     await query(
-      'UPDATE users SET refresh_token_hash = $1, last_login_at = NOW() WHERE id = $2',
+      'UPDATE users SET refresh_token_hash = $1 WHERE id = $2',
       [refreshHash, user.id]
     );
 
-    return res.status(201).json({
-      message: 'Account created successfully.',
+    return res.status(200).json({
+      message: 'Email verified successfully. Welcome to FlexFlow!',
       user: {
-        id:                 user.id,
-        email:              user.email,
-        full_name:          user.full_name,
-        plan:               user.plan,
+        id:                  user.id,
+        email:               email,
+        full_name:           user.full_name,
+        plan:                user.plan,
         onboarding_complete: user.onboarding_complete,
       },
       access_token:  accessToken,
@@ -107,8 +215,55 @@ async function register(req, res) {
     });
 
   } catch (err) {
-    console.error('Register error:', err);
-    return res.status(500).json({ error: 'Registration failed. Please try again.' });
+    console.error('Verify email error:', err);
+    return res.status(500).json({ error: 'Verification failed. Please try again.' });
+  }
+}
+
+// ── POST /auth/resend-verification ────────────────────────────────────────────
+
+async function resendVerification(req, res) {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required.' });
+    }
+
+    const result = await query(
+      'SELECT id, full_name, email_verified FROM users WHERE email = $1',
+      [email.toLowerCase().trim()]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Account not found.' });
+    }
+
+    const user = result.rows[0];
+
+    if (user.email_verified) {
+      return res.status(400).json({ error: 'This account is already verified.' });
+    }
+
+    // Generate new code
+    const code    = generateVerificationCode();
+    const expires = new Date(Date.now() + 15 * 60 * 1000);
+
+    await query(
+      'UPDATE users SET verification_code = $1, verification_expires = $2 WHERE id = $3',
+      [code, expires, user.id]
+    );
+
+    const firstName = user.full_name ? user.full_name.split(' ')[0] : 'there';
+    await sendVerificationEmail(email, firstName, code);
+
+    return res.status(200).json({
+      message: 'A new verification code has been sent to your email.'
+    });
+
+  } catch (err) {
+    console.error('Resend verification error:', err);
+    return res.status(500).json({ error: 'Failed to resend code. Please try again.' });
   }
 }
 
@@ -122,9 +277,8 @@ async function login(req, res) {
       return res.status(400).json({ error: 'Email and password are required.' });
     }
 
-    // Find user
     const result = await query(
-      `SELECT id, email, full_name, password_hash, plan,
+      `SELECT id, email, full_name, password_hash, plan, email_verified,
               onboarding_complete, onboarding_step, income_structure,
               is_scottish_taxpayer, subscription_status
        FROM users WHERE email = $1`,
@@ -132,24 +286,29 @@ async function login(req, res) {
     );
 
     if (result.rows.length === 0) {
-      // Generic message — don't reveal whether email exists
       return res.status(401).json({ error: 'Incorrect email or password.' });
     }
 
     const user = result.rows[0];
 
-    // Check password
     const passwordMatch = await bcrypt.compare(password, user.password_hash);
     if (!passwordMatch) {
       return res.status(401).json({ error: 'Incorrect email or password.' });
     }
 
-    // Generate tokens
+    // Block login if email not verified
+    if (!user.email_verified) {
+      return res.status(403).json({
+        error: 'Please verify your email before logging in.',
+        unverified: true,
+        email: user.email,
+      });
+    }
+
     const accessToken  = generateAccessToken(user.id);
     const refreshToken = generateRefreshToken(user.id);
+    const refreshHash  = await bcrypt.hash(refreshToken, 10);
 
-    // Store refresh token hash + update last login
-    const refreshHash = await bcrypt.hash(refreshToken, 10);
     await query(
       'UPDATE users SET refresh_token_hash = $1, last_login_at = NOW() WHERE id = $2',
       [refreshHash, user.id]
@@ -187,7 +346,6 @@ async function refresh(req, res) {
       return res.status(400).json({ error: 'Refresh token required.' });
     }
 
-    // Verify refresh token signature
     let payload;
     try {
       payload = jwt.verify(refresh_token, process.env.JWT_REFRESH_SECRET);
@@ -199,7 +357,6 @@ async function refresh(req, res) {
       return res.status(401).json({ error: 'Invalid token type.' });
     }
 
-    // Get user and check stored hash
     const result = await query(
       'SELECT id, refresh_token_hash, onboarding_complete FROM users WHERE id = $1',
       [payload.userId]
@@ -215,13 +372,11 @@ async function refresh(req, res) {
       return res.status(401).json({ error: 'Session expired. Please log in again.' });
     }
 
-    // Verify the refresh token matches what we stored
     const tokenMatch = await bcrypt.compare(refresh_token, user.refresh_token_hash);
     if (!tokenMatch) {
       return res.status(401).json({ error: 'Invalid refresh token. Please log in again.' });
     }
 
-    // Issue new tokens (rotation — old refresh token invalidated)
     const newAccessToken  = generateAccessToken(user.id);
     const newRefreshToken = generateRefreshToken(user.id);
     const newRefreshHash  = await bcrypt.hash(newRefreshToken, 10);
@@ -249,7 +404,6 @@ async function logout(req, res) {
     const { refresh_token } = req.body;
 
     if (refresh_token) {
-      // Try to identify the user from the token and clear their hash
       try {
         const payload = jwt.verify(refresh_token, process.env.JWT_REFRESH_SECRET);
         await query(
@@ -257,7 +411,7 @@ async function logout(req, res) {
           [payload.userId]
         );
       } catch (err) {
-        // Token invalid — that's fine, user is logged out anyway
+        // Token invalid — fine, user is logged out anyway
       }
     }
 
@@ -269,4 +423,4 @@ async function logout(req, res) {
   }
 }
 
-module.exports = { register, login, refresh, logout };
+module.exports = { register, verifyEmail, resendVerification, login, refresh, logout };
