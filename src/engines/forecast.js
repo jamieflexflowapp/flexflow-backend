@@ -71,8 +71,8 @@ async function generateForecast(userId, scenarioOverride = null) {
   const startBalance  = Math.max(0, bankBalance - taxPotBalance);
 
   // Step 2: Income history for projection
-  const sixMonthsAgo = new Date();
-  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 12);
+  const historyLookback = new Date();
+  historyLookback.setMonth(historyLookback.getMonth() - 24);
 
   const incomeResult = await query(
     `SELECT
@@ -85,15 +85,34 @@ async function generateForecast(userId, scenarioOverride = null) {
        AND income_date >= $2
      GROUP BY DATE_TRUNC('month', income_date)
      ORDER BY month ASC`,
-    [userId, sixMonthsAgo.toISOString().split('T')[0]]
+    [userId, historyLookback.toISOString().split('T')[0]]
   );
 
   const monthlyIncomes = incomeResult.rows.map(r => parseFloat(r.total) || 0);
   const monthsOfData   = monthlyIncomes.length;
 
+  // ── MINIMUM DATA GATE ──────────────────────────────────────────────────────
+  // Need at least 10 months of history to forecast even 1 month ahead.
+  // With N months of data, we can forecast (N - 9) months ahead, max 3.
+  const MIN_MONTHS_FOR_FORECAST = 10;
+  const monthsAhead = Math.min(3, Math.max(0, monthsOfData - 9));
+
+  if (monthsOfData < MIN_MONTHS_FOR_FORECAST) {
+    return {
+      forecast_unavailable: true,
+      months_of_data:       monthsOfData,
+      months_needed:        MIN_MONTHS_FOR_FORECAST,
+      months_remaining:     MIN_MONTHS_FOR_FORECAST - monthsOfData,
+      message:              `90-day forecasting requires at least 10 months of income data. You have ${monthsOfData} month${monthsOfData === 1 ? '' : 's'} so far.`,
+    };
+  }
+
   // Confidence level (FCE Part 5.1)
+  // LOW < 12 months (can forecast but limited pattern data)
+  // MEDIUM 12-23 months (one full seasonal cycle)
+  // HIGH 24+ months (two full seasonal cycles — most reliable)
   let confidence;
-  if (monthsOfData < 6)       confidence = 'LOW';
+  if (monthsOfData < 12)      confidence = 'LOW';
   else if (monthsOfData < 24) confidence = 'MEDIUM';
   else                        confidence = 'HIGH';
 
