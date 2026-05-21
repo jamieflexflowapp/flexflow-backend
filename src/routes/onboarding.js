@@ -114,6 +114,10 @@ router.post('/profile', async (req, res) => {
     };
 
     addField('income_structure',          income_structure);
+    if (tax_code) {
+      addField('tax_code',              tax_code.toUpperCase().trim());
+      addField('tax_code_updated_at',   new Date().toISOString());
+    }
     if (disclaimer_accepted) {
       addField('disclaimer_accepted',      true);
       addField('disclaimer_accepted_at',   new Date().toISOString());

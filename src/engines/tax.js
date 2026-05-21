@@ -63,7 +63,7 @@ async function loadRates(taxYear = '2026/27', isScottish = false) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 function calcEffectivePA(totalIncome, rates) {
-  const pa         = rates.personal_allowance || 12570;
+  const pa         = effectivePAOverride !== null ? effectivePAOverride : (rates.personal_allowance || 12570);
   const taperStart = rates.pa_taper_start     || 100000;
 
   if (totalIncome <= taperStart) return pa;
@@ -290,13 +290,35 @@ async function calculateTaxLiability(userId, taxYear = '2026/27') {
             is_ltd_director, is_vat_registered, is_vat_registered,
             receives_rental_income, receives_partnership,
             date_of_birth, partnership_profit_share_pct,
-            tax_pot_target
+            tax_pot_target,
+            COALESCE(tax_code, '1257L') AS tax_code
      FROM users WHERE id = $1`,
     [userId]
   );
 
   if (userResult.rows.length === 0) throw new Error('User not found');
   const user = userResult.rows[0];
+
+  // Parse tax code to determine effective personal allowance
+  // Supports: 1257L (standard), BR, D0, D1, NT, K codes, S/C prefix variants
+  const rawTaxCode = (user.tax_code || '1257L').toUpperCase().trim();
+  let effectivePAOverride = null;
+
+  if (rawTaxCode === 'NT') {
+    effectivePAOverride = 999999;           // No tax — treat as unlimited allowance
+  } else if (rawTaxCode === 'BR' || rawTaxCode === 'D0' || rawTaxCode === 'D1') {
+    effectivePAOverride = 0;               // No personal allowance on this income
+  } else if (rawTaxCode.startsWith('K')) {
+    const kNum = parseInt(rawTaxCode.slice(1)) || 0;
+    effectivePAOverride = -(kNum * 10);    // K codes = negative allowance
+  } else {
+    // Standard numeric code e.g. 1257L, S1257L, C1257L
+    const stripped = rawTaxCode.replace(/^[SC]/, '').replace(/[A-Z]+$/, '');
+    const codeNum = parseInt(stripped);
+    if (!isNaN(codeNum)) {
+      effectivePAOverride = codeNum * 10;  // e.g. 1257 × 10 = £12,570
+    }
+  }
 
   // Load all rates from database — zero hardcoded values
   const rates = await loadRates(taxYear, user.is_scottish_taxpayer);

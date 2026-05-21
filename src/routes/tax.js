@@ -232,4 +232,35 @@ router.get('/self-assessment', async (req, res) => {
   }
 });
 
+
+// ── Update tax code ─────────────────────────────────────────────────────────
+router.put('/tax-code', requireAuth, async (req, res) => {
+  try {
+    const userId   = req.user.id;
+    const { tax_code } = req.body;
+
+    if (!tax_code || typeof tax_code !== 'string') {
+      return res.status(400).json({ error: 'tax_code is required' });
+    }
+
+    const cleaned = tax_code.toUpperCase().trim();
+
+    // Basic validation — must be NT, BR, D0, D1, K followed by digits, or numeric+letter
+    const validPattern = /^[SC]?\d{1,4}[A-Z]{1,2}$|^(NT|BR|D[01])$|^[SC]?K\d{1,4}$/;
+    if (!validPattern.test(cleaned)) {
+      return res.status(400).json({ error: 'Invalid tax code format' });
+    }
+
+    await query(
+      `UPDATE users SET tax_code = $1, tax_code_updated_at = NOW() WHERE id = $2`,
+      [cleaned, userId]
+    );
+
+    res.json({ success: true, tax_code: cleaned });
+  } catch (err) {
+    console.error('Tax code update error:', err);
+    res.status(500).json({ error: 'Failed to update tax code' });
+  }
+});
+
 module.exports = router;
