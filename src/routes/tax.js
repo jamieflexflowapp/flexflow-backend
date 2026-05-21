@@ -234,7 +234,7 @@ router.get('/self-assessment', async (req, res) => {
 
 
 // ── Update tax code ─────────────────────────────────────────────────────────
-router.put('/tax-code', requireAuth, async (req, res) => {
+router.put('/tax-code', async (req, res) => {
   try {
     const userId   = req.user.id;
     const { tax_code } = req.body;

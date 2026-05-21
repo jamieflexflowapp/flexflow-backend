@@ -2,12 +2,12 @@
 
 const express      = require('express');
 const router       = express.Router();
-const { query }    = require('../db');
-const requireAuth  = require('../middleware/requireAuth');
+const { query }    = require('../config/database');
+const { verifyToken, checkOnboardingComplete } = require('../middleware/auth');
 
 // ── GET /committed-bills ────────────────────────────────────────────────────
 // Returns all active committed bills for the user
-router.get('/', requireAuth, async (req, res) => {
+router.get('/', verifyToken, checkOnboardingComplete, async (req, res) => {
   try {
     const userId = req.user.id;
     const result = await query(
@@ -35,7 +35,7 @@ router.get('/', requireAuth, async (req, res) => {
 
 // ── POST /committed-bills ────────────────────────────────────────────────────
 // Add a new committed bill (manual or from transaction)
-router.post('/', requireAuth, async (req, res) => {
+router.post('/', verifyToken, checkOnboardingComplete, async (req, res) => {
   try {
     const userId = req.user.id;
     const { name, amount, day_of_month, source = 'manual', transaction_id } = req.body;
@@ -65,7 +65,7 @@ router.post('/', requireAuth, async (req, res) => {
 
 // ── DELETE /committed-bills/:id ─────────────────────────────────────────────
 // Soft-delete (deactivate) a committed bill
-router.delete('/:id', requireAuth, async (req, res) => {
+router.delete('/:id', verifyToken, checkOnboardingComplete, async (req, res) => {
   try {
     const userId = req.user.id;
     const { id }  = req.params;
@@ -91,7 +91,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
 
 // ── PUT /committed-bills/:id/restore ────────────────────────────────────────
 // Restore a previously removed bill
-router.put('/:id/restore', requireAuth, async (req, res) => {
+router.put('/:id/restore', verifyToken, checkOnboardingComplete, async (req, res) => {
   try {
     const userId = req.user.id;
     const { id }  = req.params;

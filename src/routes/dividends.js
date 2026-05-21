@@ -2,13 +2,13 @@
 
 const express     = require('express');
 const router      = express.Router();
-const { query }   = require('../db');
-const requireAuth = require('../middleware/requireAuth');
+const { query }   = require('../config/database');
+const { verifyToken, checkOnboardingComplete } = require('../middleware/auth');
 
 // ── GET /dividends/calculator ────────────────────────────────────────────────
 // Returns the available-to-take figure for the dividend calculator
 // Formula: bank_balance − tax_pot − safety_reserve (15%)
-router.get('/calculator', requireAuth, async (req, res) => {
+router.get('/calculator', verifyToken, checkOnboardingComplete, async (req, res) => {
   try {
     const userId = req.user.id;
 
@@ -75,7 +75,7 @@ router.get('/calculator', requireAuth, async (req, res) => {
 
 // ── POST /dividends/calculate-tax ────────────────────────────────────────────
 // Real-time tax calculation for a proposed dividend amount
-router.post('/calculate-tax', requireAuth, async (req, res) => {
+router.post('/calculate-tax', verifyToken, checkOnboardingComplete, async (req, res) => {
   try {
     const userId = req.user.id;
     const { amount } = req.body;
@@ -150,7 +150,7 @@ router.post('/calculate-tax', requireAuth, async (req, res) => {
 
 // ── POST /dividends/log ──────────────────────────────────────────────────────
 // Log a dividend payment taken
-router.post('/log', requireAuth, async (req, res) => {
+router.post('/log', verifyToken, checkOnboardingComplete, async (req, res) => {
   try {
     const userId = req.user.id;
     const { amount, date, notes } = req.body;
@@ -203,7 +203,7 @@ router.post('/log', requireAuth, async (req, res) => {
 
 // ── GET /dividends/history ───────────────────────────────────────────────────
 // Returns dividend history for the current tax year
-router.get('/history', requireAuth, async (req, res) => {
+router.get('/history', verifyToken, checkOnboardingComplete, async (req, res) => {
   try {
     const userId = req.user.id;
 
@@ -233,7 +233,7 @@ router.get('/history', requireAuth, async (req, res) => {
 
 // ── PUT /dividends/settings ──────────────────────────────────────────────────
 // Update director salary and dividend frequency
-router.put('/settings', requireAuth, async (req, res) => {
+router.put('/settings', verifyToken, checkOnboardingComplete, async (req, res) => {
   try {
     const userId = req.user.id;
     const { director_salary_annual, dividend_frequency } = req.body;
