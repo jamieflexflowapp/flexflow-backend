@@ -12,7 +12,6 @@
  *
  * Key rules (from ISE v1.5 spec):
  *   - Default rolling window: 6 months (12 for PRO users)
- *   - Default reserve buffer: 15% (user-adjustable 5–40%)
  *   - Confidence: LOW < 12 months, MEDIUM 12–23 months, HIGH 24+ months
  *   - SE income ONLY is smoothed. PAYE added as fixed monthly amount.
  *   - CIS: read gross_amount from income_events (Build Note 2)
@@ -55,7 +54,7 @@ async function calculatePersonalIncome(userId) {
   // Step 1: Get user profile
   const userResult = await query(
     `SELECT income_structure, is_cis_worker, receives_paye,
-            is_ltd_director, reserve_buffer_pct, rolling_window_months,
+            is_ltd_director, rolling_window_months,
             tax_pot_target, plan
      FROM users WHERE id = $1`,
     [userId]
@@ -64,7 +63,7 @@ async function calculatePersonalIncome(userId) {
   if (userResult.rows.length === 0) throw new Error('User not found');
   const user = userResult.rows[0];
 
-  const reserveBuffer    = parseFloat(user.reserve_buffer_pct) || 0.15;
+  const reserveBuffer    = 0;  // Safety reserve removed — not used
   const windowMonths     = user.plan === 'pro'
     ? (user.rolling_window_months || 12)
     : 6;
@@ -224,7 +223,6 @@ function buildResult(
     confidence_copy:          copyStrings[confidenceLevel],
     gross_avg_monthly_se:     Math.round(grossAvgMonthlySE * 100) / 100,
     monthly_tax_allocation:   Math.round(monthlyTaxAlloc * 100) / 100,
-    reserve_buffer_pct:       reserveBuffer,
     reserve_amount:           Math.round(reserveAmount * 100) / 100,
     fixed_monthly_net:        Math.round(fixedMonthlyNet * 100) / 100,
     smoothed_variable_income: Math.round(smoothedVariableIncome * 100) / 100,

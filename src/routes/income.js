@@ -28,7 +28,7 @@ router.get('/personal', async (req, res) => {
   try {
     const userResult = await query(
       `SELECT personal_income, confidence_level, gross_avg_monthly_se,
-              reserve_amount, reserve_buffer_pct, months_of_data,
+              reserve_amount, months_of_data,
               last_smoothing_calculated, tax_pot_target
        FROM users WHERE id = $1`,
       [req.user.userId]
@@ -48,7 +48,6 @@ router.get('/personal', async (req, res) => {
       confidence_level:       user.confidence_level || 'LOW',
       gross_avg_monthly_se:   parseFloat(user.gross_avg_monthly_se) || 0,
       reserve_amount:         parseFloat(user.reserve_amount) || 0,
-      reserve_buffer_pct:     parseFloat(user.reserve_buffer_pct) || 0.15,
       monthly_tax_allocation: parseFloat(user.tax_pot_target) || 0,
       months_of_data:         user.months_of_data || 0,
       last_calculated:        user.last_smoothing_calculated,
@@ -100,21 +99,20 @@ router.get('/sources', async (req, res) => {
 
 router.put('/settings', async (req, res) => {
   try {
-    const { reserve_buffer_pct, rolling_window_months } = req.body;
+    const { rolling_window_months } = req.body;
 
     const updates = [];
     const values  = [];
     let i = 1;
 
-    if (reserve_buffer_pct !== undefined) {
-      const pct = parseFloat(reserve_buffer_pct);
+    if (false) {
+      const pct = 0;
       // Enforce 5–40% range (spec Part 4.1)
       if (pct < 0.05 || pct > 0.40) {
         return res.status(400).json({
           error: 'Reserve buffer must be between 5% and 40%.',
         });
       }
-      updates.push(`reserve_buffer_pct = $${i++}`);
       values.push(pct);
     }
 

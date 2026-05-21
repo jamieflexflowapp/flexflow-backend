@@ -46,7 +46,7 @@ const DANGER_RED = 1.00; // Any month where projected income < projected expense
 async function generateForecast(userId, scenarioOverride = null) {
   // Load user profile
   const userResult = await query(
-    `SELECT plan, income_structure, reserve_buffer_pct, is_vat_registered,
+    `SELECT plan, income_structure, is_vat_registered,
             personal_income, tax_pot_target, is_cis_worker
      FROM users WHERE id = $1`,
     [userId]
@@ -56,7 +56,7 @@ async function generateForecast(userId, scenarioOverride = null) {
 
   // Tier gate — FREE gets 403 (enforced in route, not here)
   const windowMonths = user.plan === 'pro' ? 3 : 1;
-  const reserveBuffer = parseFloat(user.reserve_buffer_pct) || 0.15;
+  const reserveBuffer = 0;  // Safety reserve removed — not used
 
   // Step 1: Current balance (tax pot excluded — Build Note 8)
   const balanceResult = await query(
@@ -278,7 +278,6 @@ async function generateForecast(userId, scenarioOverride = null) {
     tax_pot_balance:    Math.round(taxPotBalance * 100) / 100,
     avg_monthly_income: Math.round(avgIncome * 100) / 100,
     conservative_income:Math.round(conservativeIncome * 100) / 100,
-    reserve_buffer_pct: reserveBuffer,
     months,
     is_scenario:        !!scenarioOverride,
     generated_at:       new Date().toISOString(),

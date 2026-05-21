@@ -7,7 +7,7 @@ const { verifyToken, checkOnboardingComplete } = require('../middleware/auth');
 
 // ── GET /dividends/calculator ────────────────────────────────────────────────
 // Returns the available-to-take figure for the dividend calculator
-// Formula: bank_balance − tax_pot − safety_reserve (15%)
+// Formula: bank_balance − tax_pot
 router.get('/calculator', verifyToken, checkOnboardingComplete, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -32,8 +32,7 @@ router.get('/calculator', verifyToken, checkOnboardingComplete, async (req, res)
     const availableBalance = parseFloat(balResult.rows[0]?.available_balance) || 0;
     const taxPot           = parseFloat(taxPotResult.rows[0]?.tax_pot) || 0;
     const afterTax         = availableBalance - taxPot;
-    const safetyReserve    = Math.round(afterTax * 0.15 * 100) / 100;
-    const availableTake    = Math.round((afterTax - safetyReserve) * 100) / 100;
+    const availableTake    = Math.round(afterTax * 100) / 100;
 
     // Get dividend allowance remaining this tax year
     const divResult = await query(
@@ -59,7 +58,6 @@ router.get('/calculator', verifyToken, checkOnboardingComplete, async (req, res)
     res.json({
       available_balance:   Math.round(availableBalance * 100) / 100,
       tax_pot:             Math.round(taxPot * 100) / 100,
-      safety_reserve:      safetyReserve,
       available_to_take:   Math.max(availableTake, 0),
       dividend_allowance:  divAllowance,
       allowance_used:      Math.round(allowanceUsed * 100) / 100,
