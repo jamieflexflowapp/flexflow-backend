@@ -92,8 +92,8 @@ async function generateForecast(userId, scenarioOverride = null) {
 
   // Confidence level (FCE Part 5.1)
   let confidence;
-  if (monthsOfData < 3)       confidence = 'LOW';
-  else if (monthsOfData < 12) confidence = 'MEDIUM';
+  if (monthsOfData < 6)       confidence = 'LOW';
+  else if (monthsOfData < 24) confidence = 'MEDIUM';
   else                        confidence = 'HIGH';
 
   // Base case: rolling average

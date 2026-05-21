@@ -13,7 +13,7 @@
  * Key rules (from ISE v1.5 spec):
  *   - Default rolling window: 6 months (12 for PRO users)
  *   - Default reserve buffer: 15% (user-adjustable 5–40%)
- *   - Confidence: LOW < 3 months, MEDIUM 3–5, HIGH 6+
+ *   - Confidence: INSUFFICIENT < 6 months, LOW 6–11, MEDIUM 12–23, HIGH 24+
  *   - SE income ONLY is smoothed. PAYE added as fixed monthly amount.
  *   - CIS: read gross_amount from income_events (Build Note 2)
  *   - Zero-income months ARE included in the average (they're real months)
@@ -97,9 +97,9 @@ async function calculatePersonalIncome(userId) {
   // Step 3: Determine confidence level
   const monthsOfData = monthlyData.length;
   let confidenceLevel;
-  if (monthsOfData < 3)      confidenceLevel = 'LOW';
-  else if (monthsOfData < 6) confidenceLevel = 'MEDIUM';
-  else                        confidenceLevel = 'HIGH';
+  if (monthsOfData < 6)       confidenceLevel = 'LOW';
+  else if (monthsOfData < 24) confidenceLevel = 'MEDIUM';
+  else                         confidenceLevel = 'HIGH';
 
   // Edge case: no income data yet
   if (monthsOfData === 0) {
@@ -209,9 +209,9 @@ function buildResult(
   // FCA compliance — no directive language (spec Part 11)
   // MUST NOT say "you can spend" or "this is your income"
   const copyStrings = {
-    LOW:    'Based on limited history — this figure will become more accurate as you earn more through FlexFlow.',
-    MEDIUM: `Based on your last ${monthsOfData} months of earnings. This figure improves as your history grows.`,
-    HIGH:   'Based on your last 6 months of earnings.',
+    LOW:    `Based on ${monthsOfData} months of history — this figure will become significantly more accurate once you have 12+ months of data.`,
+    MEDIUM: `Based on your last ${monthsOfData} months of earnings. Confidence increases further at 24 months of data.`,
+    HIGH:   `Based on your last ${monthsOfData} months of earnings — high confidence.`,
   };
 
   const MONTH_NAMES = ['','January','February','March','April','May','June',
