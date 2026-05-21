@@ -77,8 +77,8 @@ async function calculateRunway(userId) {
   // Formula: available_balance ÷ (Tier 1 monthly ÷ 4.33)
   let runwayWeeks = 0;
   if (tier1Monthly > 0) {
-    const weeklyBurn = tier1Monthly / 4.33;
-    runwayWeeks      = Math.round((availableBalance / weeklyBurn) * 1000) / 1000;  // 3dp for accurate day calc
+    const weeklyBurn    = Math.round((tier1Monthly / 4.33) * 100) / 100;  // 2dp to match display
+    runwayWeeks         = availableBalance / weeklyBurn;  // full precision from 2dp weekly
   }
 
   // Step 4: Danger status — based on weeks of runway
