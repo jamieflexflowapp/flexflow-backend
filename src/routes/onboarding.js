@@ -54,6 +54,8 @@ router.post('/profile', async (req, res) => {
     const {
       // Q1 primary income type
       income_structure,         // 'S1'|'S2'|'S3a'|'S3b'|'S3c'|'S3d'|'S10'|'S12a'
+      disclaimer_accepted,     // boolean — user accepted FCA disclaimer
+      disclaimer_version,      // string — version of disclaimer accepted e.g. '1.0'
 
       // Income flags
       receives_paye,
@@ -112,6 +114,11 @@ router.post('/profile', async (req, res) => {
     };
 
     addField('income_structure',          income_structure);
+    if (disclaimer_accepted) {
+      addField('disclaimer_accepted',      true);
+      addField('disclaimer_accepted_at',   new Date().toISOString());
+      addField('disclaimer_version',       disclaimer_version || '1.0');
+    }
     addField('receives_paye',             receives_paye);
     addField('receives_se',               receives_se);
     addField('receives_rental_income',    receives_rental_income);
