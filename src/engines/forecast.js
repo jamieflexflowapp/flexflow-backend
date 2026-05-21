@@ -35,8 +35,9 @@ const SEASONAL_WEIGHTS = {
 const RELIABILITY_WEIGHTS = { GREEN: 1.0, AMBER: 0.75, RED: 0.4 };
 
 // Danger thresholds (FCE Part 7)
-const DANGER_RED   = 0.80; // Conservative income < 80% of projected expenses
-const DANGER_AMBER = 1.00; // Conservative income < 100% of projected expenses
+// Simplified: RED = projected shortfall, GREEN = projected surplus
+// AMBER removed — avoids misleading users who are still in surplus
+const DANGER_RED = 1.00; // Any month where projected income < projected expenses
 
 // ══════════════════════════════════════════════════════════════════════════════
 // MAIN: generateForecast
@@ -212,8 +213,6 @@ async function generateForecast(userId, scenarioOverride = null) {
       dangerLevel = 'UNKNOWN';
     } else if (projIncomeConservative < projExpenses * DANGER_RED) {
       dangerLevel = 'RED';
-    } else if (projIncomeConservative < projExpenses * DANGER_AMBER) {
-      dangerLevel = 'AMBER';
     } else {
       dangerLevel = 'GREEN';
     }
@@ -326,7 +325,7 @@ function buildTaxSpikes(forecastDate, taxCalc, isVatRegistered) {
 
 async function fireDangerAlerts(userId, months) {
   for (const month of months) {
-    if (month.danger_level === 'RED' || month.danger_level === 'AMBER') {
+    if (month.danger_level === 'RED') {
       const dedupKey = `DANGER_${month.danger_level}_${month.month}`;
       await query(`
         INSERT INTO notifications
@@ -337,7 +336,7 @@ async function fireDangerAlerts(userId, months) {
         userId,
         'DANGER_MONTH_AHEAD',
         month.danger_level,
-        `${month.danger_level === 'RED' ? '⚠️ Risk month' : 'Quieter month'}: ${month.month_label}`,
+        `⚠️ Risk month — projected shortfall: ${month.month_label}`,
         month.alert_copy,
         dedupKey,
       ]);
