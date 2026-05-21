@@ -118,6 +118,13 @@ router.post('/profile', async (req, res) => {
       addField('tax_code',              tax_code.toUpperCase().trim());
       addField('tax_code_updated_at',   new Date().toISOString());
     }
+    if (director_salary_annual !== undefined) {
+      addField('director_salary_annual', parseFloat(director_salary_annual) || 12570);
+    }
+    if (dividend_frequency) {
+      addField('dividend_frequency',     dividend_frequency);
+      addField('dividend_frequency_updated_at', new Date().toISOString());
+    }
     if (disclaimer_accepted) {
       addField('disclaimer_accepted',      true);
       addField('disclaimer_accepted_at',   new Date().toISOString());

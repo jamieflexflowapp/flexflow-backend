@@ -49,6 +49,8 @@ const truelayerRoutes   = require('./routes/truelayer');
 app.use('/truelayer',   truelayerRoutes);
 const committedBillsRoutes = require('./routes/committed_bills');
 app.use('/committed-bills', committedBillsRoutes);
+const dividendsRoutes = require('./routes/dividends');
+app.use('/dividends', dividendsRoutes);
 // Session C: TrueLayer routes ✅
 const incomeRoutes      = require('./routes/income');
 app.use('/income',      incomeRoutes);
