@@ -94,8 +94,8 @@ async function generateForecast(userId, scenarioOverride = null) {
   // ── MINIMUM DATA GATE ──────────────────────────────────────────────────────
   // Need at least 10 months of history to forecast even 1 month ahead.
   // With N months of data, we can forecast (N - 9) months ahead, max 3.
-  const MIN_MONTHS_FOR_FORECAST = 10;
-  const monthsAhead = Math.min(3, Math.max(0, monthsOfData - 9));
+  const MIN_MONTHS_FOR_FORECAST = 12;
+  const monthsAhead = 3; // Always 3 months ahead — minimum is now 12 months
 
   if (monthsOfData < MIN_MONTHS_FOR_FORECAST) {
     return {
@@ -103,18 +103,12 @@ async function generateForecast(userId, scenarioOverride = null) {
       months_of_data:       monthsOfData,
       months_needed:        MIN_MONTHS_FOR_FORECAST,
       months_remaining:     MIN_MONTHS_FOR_FORECAST - monthsOfData,
-      message:              `90-day forecasting requires at least 10 months of income data. You have ${monthsOfData} month${monthsOfData === 1 ? '' : 's'} so far.`,
+      message:              `90-day forecasting requires at least 12 months of income data. You have ${monthsOfData} month${monthsOfData === 1 ? '' : 's'} so far.`,
     };
   }
 
-  // Confidence level (FCE Part 5.1)
-  // LOW < 12 months (can forecast but limited pattern data)
-  // MEDIUM 12-23 months (one full seasonal cycle)
-  // HIGH 24+ months (two full seasonal cycles — most reliable)
-  let confidence;
-  if (monthsOfData < 12)      confidence = 'LOW';
-  else if (monthsOfData < 24) confidence = 'MEDIUM';
-  else                        confidence = 'HIGH';
+  // No confidence level on forecast — confidence applies to personal income only
+  // Forecast simply presents available data based on months of history
 
   // Base case: rolling average
   const avgIncome = monthsOfData > 0
@@ -197,7 +191,7 @@ async function generateForecast(userId, scenarioOverride = null) {
     }
 
     // Base case income
-    let projIncomeBase = confidence === 'LOW'
+    let projIncomeBase = monthsOfData < 12
       ? 0 // Conservative only for LOW
       : avgIncome * seasonWeight * reliabilityFactor * (1 - reserveBuffer) + scenarioIncomeAdjustment;
     projIncomeBase = Math.max(0, Math.round(projIncomeBase * 100) / 100);
@@ -276,7 +270,7 @@ async function generateForecast(userId, scenarioOverride = null) {
 
   return {
     window_months:      windowMonths,
-    confidence:         confidence,
+    // confidence removed — not surfaced on forecast
     months_of_data:     monthsOfData,
     start_balance:      Math.round(startBalance * 100) / 100,
     bank_balance:       Math.round(bankBalance * 100) / 100,
