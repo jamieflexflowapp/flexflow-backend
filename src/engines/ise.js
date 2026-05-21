@@ -87,6 +87,7 @@ async function calculatePersonalIncome(userId) {
        AND income_type IN ('se', 'cis', 'rental', 'dividend')
        AND included_in_smoothing = true
        AND income_date >= $2
+       AND income_date < DATE_TRUNC('month', CURRENT_DATE)  -- exclude current incomplete month
      GROUP BY DATE_TRUNC('month', income_date)
      ORDER BY month DESC`,
     [userId, windowStart.toISOString().split('T')[0]]

@@ -83,6 +83,7 @@ async function generateForecast(userId, scenarioOverride = null) {
        AND income_type IN ('se','cis','rental','dividend','paye','umbrella')
        AND included_in_smoothing = true
        AND income_date >= $2
+       AND income_date < DATE_TRUNC('month', CURRENT_DATE)  -- exclude current incomplete month
      GROUP BY DATE_TRUNC('month', income_date)
      ORDER BY month ASC`,
     [userId, historyLookback.toISOString().split('T')[0]]
