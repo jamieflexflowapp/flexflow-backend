@@ -47,6 +47,8 @@ app.use('/onboarding',  onboardingRoutes);
 
 const truelayerRoutes   = require('./routes/truelayer');
 app.use('/truelayer',   truelayerRoutes);
+const committedBillsRoutes = require('./routes/committed_bills');
+app.use('/committed-bills', committedBillsRoutes);
 // Session C: TrueLayer routes ✅
 const incomeRoutes      = require('./routes/income');
 app.use('/income',      incomeRoutes);

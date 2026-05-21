@@ -35,7 +35,43 @@ const TL_API_URL = process.env.TRUELAYER_SANDBOX === 'true'
 // Generate TrueLayer OAuth authorisation URL
 // Mobile app opens this URL in a browser for bank selection
 
-router.get('/connect', verifyToken, checkOnboardingComplete, (req, res) => {
+
+// ── Plan bank account limit middleware ──────────────────────────────────────
+async function checkBankAccountLimit(req, res, next) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return next();
+
+    const limitResult = await query(
+      `SELECT pc.max_bank_accounts,
+              COUNT(tla.id) AS current_count
+       FROM users u
+       JOIN plan_config pc ON pc.plan = COALESCE(u.plan, 'free')
+       LEFT JOIN truelayer_accounts tla ON tla.user_id = u.id AND tla.is_active = true
+       WHERE u.id = $1
+       GROUP BY pc.max_bank_accounts`,
+      [userId]
+    );
+
+    if (limitResult.rows.length > 0) {
+      const { max_bank_accounts, current_count } = limitResult.rows[0];
+      if (max_bank_accounts !== -1 && parseInt(current_count) >= parseInt(max_bank_accounts)) {
+        return res.status(403).json({
+          error: 'Bank account limit reached for your plan',
+          max_bank_accounts: parseInt(max_bank_accounts),
+          current_count: parseInt(current_count),
+          upgrade_required: true,
+        });
+      }
+    }
+    next();
+  } catch (err) {
+    console.error('Plan limit check error:', err);
+    next(); // Non-fatal — proceed if check fails
+  }
+}
+
+router.get('/connect', verifyToken, checkOnboardingComplete, checkBankAccountLimit, async (req, res) => {
   const params = new URLSearchParams({
     response_type: 'code',
     client_id:     process.env.TRUELAYER_CLIENT_ID,
@@ -400,5 +436,35 @@ function getTaxYear(date) {
   const startYear = isNewYear ? year : year - 1;
   return `${startYear}/${String(startYear + 1).slice(-2)}`;
 }
+
+
+// ── GET /accounts/count — returns current connections vs plan limit ──────────
+router.get('/accounts/count', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const result = await query(
+      `SELECT pc.max_bank_accounts, pc.display_name AS plan_name,
+              COUNT(tla.id) AS current_count
+       FROM users u
+       JOIN plan_config pc ON pc.plan = COALESCE(u.plan, 'free')
+       LEFT JOIN truelayer_accounts tla ON tla.user_id = u.id AND tla.is_active = true
+       WHERE u.id = $1
+       GROUP BY pc.max_bank_accounts, pc.display_name`,
+      [userId]
+    );
+
+    const row = result.rows[0] || { max_bank_accounts: 1, current_count: 0, plan_name: 'Free' };
+    res.json({
+      current_count:     parseInt(row.current_count),
+      max_bank_accounts: parseInt(row.max_bank_accounts),
+      unlimited:         row.max_bank_accounts === -1,
+      plan_name:         row.plan_name,
+      can_add_more:      row.max_bank_accounts === -1 || parseInt(row.current_count) < parseInt(row.max_bank_accounts),
+    });
+  } catch (err) {
+    console.error('Account count error:', err);
+    res.status(500).json({ error: 'Failed to get account count' });
+  }
+});
 
 module.exports = router;
