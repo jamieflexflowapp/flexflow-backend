@@ -15,9 +15,9 @@
  *
  * Build Note 3: Runway denominator = Tier 1 committed outgoings ONLY
  *   NOT total projected_expenses. NAE v1.1 Part 3 is authoritative.
- *   RED  = conservative income < 80% of Tier 1 monthly
- *   AMBER = conservative income < Tier 1 monthly
- *   GREEN = conservative income >= Tier 1 monthly
+ *   GREEN = 12+ weeks of runway
+ *   AMBER = 8-11 weeks of runway
+ *   RED   = under 8 weeks of runway
  *
  * Formula:
  *   available_balance = bank_balance − tax_pot_balance
@@ -81,26 +81,21 @@ async function calculateRunway(userId) {
     runwayWeeks      = Math.round((availableBalance / weeklyBurn) * 10) / 10;
   }
 
-  // Step 4: Danger status
-  // Build Note 3: NAE v1.1 Part 3 is authoritative
-  // RED  = conservative income < 80% of Tier 1 monthly
-  // AMBER = conservative income < Tier 1 monthly
-  // GREEN = conservative income >= Tier 1 monthly
-  const personalIncomeResult = await query(
-    `SELECT personal_income FROM users WHERE id = $1`,
-    [userId]
-  );
-  const personalIncome = parseFloat(personalIncomeResult.rows[0]?.personal_income) || 0;
+  // Step 4: Danger status — based on weeks of runway
+  // Updated thresholds (Build Note 3 v1.2):
+  // GREEN = 12+ weeks  — comfortable, over 3 months of buffer
+  // AMBER = 8-11 weeks — getting tight, under 3 months
+  // RED   = under 8 weeks — critical, less than 2 months
 
   let runwayStatus;
   if (tier1Monthly === 0) {
     runwayStatus = 'UNKNOWN'; // No Tier 1 data yet
-  } else if (personalIncome < tier1Monthly * 0.80) {
-    runwayStatus = 'RED';
-  } else if (personalIncome < tier1Monthly) {
+  } else if (runwayWeeks >= 12) {
+    runwayStatus = 'GREEN';
+  } else if (runwayWeeks >= 8) {
     runwayStatus = 'AMBER';
   } else {
-    runwayStatus = 'GREEN';
+    runwayStatus = 'RED';
   }
 
   // Step 5: TPVE — Tax pot verification
