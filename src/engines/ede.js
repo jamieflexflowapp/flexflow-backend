@@ -209,7 +209,7 @@ async function calcHomeOfficeDeduction(userId, monthlyHours, method = 'flat_rate
 // MILEAGE TRACKING (45p/25p HMRC rates)
 // ══════════════════════════════════════════════════════════════════════════════
 
-const MILEAGE_RATE_FIRST  = 0.45; // First 10,000 miles
+const MILEAGE_RATE_FIRST  = 0.55; // First 10,000 miles — updated 21 May 2026 (backdated to 6 Apr 2026)
 const MILEAGE_RATE_ABOVE  = 0.25; // Above 10,000 miles
 const MILEAGE_THRESHOLD   = 10000;
 
