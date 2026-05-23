@@ -80,7 +80,7 @@ async function generateForecast(userId, scenarioOverride = null) {
        SUM(gross_amount) as total
      FROM income_events
      WHERE user_id = $1
-       AND income_type IN ('se','cis','rental','dividend','paye','umbrella')
+       AND income_type IN ('se','cis','rental','dividend','paye')
        AND included_in_smoothing = true
        AND income_date >= $2
        AND income_date < DATE_TRUNC('month', CURRENT_DATE)  -- exclude current incomplete month

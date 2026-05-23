@@ -54,12 +54,10 @@ function hasCISKeyword(description) {
   return /\bcis\b/i.test(description);
 }
 
-// ── Known umbrella companies (Priority 7) ────────────────────────────────────
-const UMBRELLA_COMPANIES = [
-  'parasol', 'brookson', 'giant pay', 'umbrella.co.uk', 'contractor umbrella',
-  'paystream', 'orangegenie', 'optionis', 'clarity umbrella', 'workwell',
-  'sapphire payroll', 'primo umbrella', 'qdos contractor',
-];
+// ── Umbrella companies — REMOVED (v1 decision, May 2026) ─────────────────────
+// Umbrella company workers are treated as PAYE for tax purposes.
+// Umbrella income type removed from v1. Deferred to v2 if needed.
+// UMBRELLA_COMPANIES array and Priority 7 branch removed.
 
 // ── Known pension providers (Priority 8) ─────────────────────────────────────
 const PENSION_PROVIDERS = [
@@ -206,17 +204,8 @@ async function classifyIncome(transaction, user, descLower, absAmount) {
     }
   }
 
-  // Priority 7: Umbrella/IR35
-  const matchedUmbrella = UMBRELLA_COMPANIES.find(u => descLower.includes(u));
-  if (matchedUmbrella) {
-    return {
-      category: 'income', sub_category: 'umbrella',
-      income_type: 'umbrella', is_income: true,
-      paye_flag: true, tax_deducted_at_source: true,
-      umbrella_company: matchedUmbrella,
-      amount_net: absAmount, gross_amount: absAmount,
-    };
-  }
+  // Priority 7: Umbrella/IR35 — REMOVED (v1 decision, May 2026)
+  // Umbrella workers should select PAYE in onboarding. Deferred to v2.
 
   // Priority 8: Pension/annuity
   const matchedPension = PENSION_PROVIDERS.find(p => descLower.includes(p));
