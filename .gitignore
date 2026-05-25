@@ -32,3 +32,4 @@ coverage/
 # Temp files
 *.tmp
 *.temp
+*.bak
