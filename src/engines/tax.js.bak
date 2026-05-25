@@ -31,12 +31,6 @@
  */
 
 const { query } = require('../config/database');
-const {
-  loadPensionRates,
-  calcSoleTraderPension,
-  calcAnnualAllowanceCharge,
-  safePositive,
-} = require('./pension');
 
 // ══════════════════════════════════════════════════════════════════════════════
 // RATE LOADER — reads ALL rates from database
@@ -65,40 +59,31 @@ async function loadRates(taxYear = '2026/27', isScottish = false) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// PERSONAL ALLOWANCE — with taper (and optional pension restoration)
+// PERSONAL ALLOWANCE — with taper
 // ══════════════════════════════════════════════════════════════════════════════
-// `pensionContribution` is the gross relief-able pension contribution amount.
-// It reduces adjusted net income for PA taper purposes, partially restoring
-// the personal allowance. This is the powerful effect at £100k–£125,140 income.
-// `effectivePAOverride` allows tax code overrides (e.g. K codes, BR, NT).
 
-function calcEffectivePA(totalIncome, rates, pensionContribution = 0, effectivePAOverride = null) {
+function calcEffectivePA(totalIncome, rates) {
   const pa         = effectivePAOverride !== null ? effectivePAOverride : (rates.personal_allowance || 12570);
   const taperStart = rates.pa_taper_start     || 100000;
 
-  // Adjusted net income for PA taper = total income MINUS pension contribution
-  const adjustedNetIncome = Math.max(0, totalIncome - pensionContribution);
-
-  if (adjustedNetIncome <= taperStart) return pa;
+  if (totalIncome <= taperStart) return pa;
 
   // Taper: lose £1 PA per £2 above £100,000
   // floor() — taper bites at £100,001 not £100,000 (confirmed in spec)
-  const reduction = Math.floor((adjustedNetIncome - taperStart) / 2);
+  const reduction = Math.floor((totalIncome - taperStart) / 2);
   return Math.max(0, pa - reduction);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
 // INCOME TAX — UK bands
 // ══════════════════════════════════════════════════════════════════════════════
-// `bandExtension` is the gross relief-able pension contribution amount.
-// It extends the basic rate band, delivering higher/additional rate relief.
 
-function calcUKIncomeTax(taxableNonDivIncome, rates, bandExtension = 0) {
+function calcUKIncomeTax(taxableNonDivIncome, rates) {
   const pa        = 0; // Already applied before calling this
   const brt       = (rates.basic_rate_threshold  || 50270);
   const hrt       = (rates.higher_rate_threshold || 125140);
-  const basicBand = brt - (rates.personal_allowance || 12570) + bandExtension;  // 37,700 + extension
-  const higherBand= (hrt - brt);                                                 // 74,870 (unchanged size)
+  const basicBand = brt - (rates.personal_allowance || 12570);  // 37,700
+  const higherBand= hrt - brt;                                   // 74,870
 
   let tax = 0;
   let remaining = Math.max(0, taxableNonDivIncome);
@@ -120,22 +105,16 @@ function calcUKIncomeTax(taxableNonDivIncome, rates, bandExtension = 0) {
 // INCOME TAX — Scottish bands (Part 1b)
 // Applies to non-savings, non-dividend income only
 // ══════════════════════════════════════════════════════════════════════════════
-// `bandExtension` is the gross relief-able pension contribution amount.
-// In Scotland, the basic rate band is extended (boundary between 20% Basic
-// and 21% Intermediate moves up). This delays entry into higher bands.
 
-function calcScottishIncomeTax(taxableNonDivIncome, rates, bandExtension = 0) {
+function calcScottishIncomeTax(taxableNonDivIncome, rates) {
   // Scottish bands (all from database — rates object has SCO values)
-  // Basic band size is extended by pension contribution; subsequent band TOPS
-  // shift up by the same amount (delaying entry to intermediate/higher/advanced/top).
-  const pa = rates.personal_allowance || 12570;
   const bands = [
-    { name: 'starter',      top: (rates.starter_band_top      || 16537)  - pa,                            rate: rates.starter_rate      || 0.19 },
-    { name: 'basic',        top: (rates.basic_band_top         || 43662)  - pa + bandExtension,            rate: rates.basic_rate         || 0.20 },
-    { name: 'intermediate', top: (rates.intermediate_band_top  || 75000)  - pa + bandExtension,            rate: rates.intermediate_rate  || 0.21 },
-    { name: 'higher',       top: (rates.higher_rate_threshold  || 125140) - pa + bandExtension,            rate: rates.higher_rate        || 0.42 },
-    { name: 'advanced',     top: (rates.advanced_band_top      || 150000) - pa + bandExtension,            rate: rates.advanced_rate      || 0.45 },
-    { name: 'top',          top: Infinity,                                                                  rate: rates.top_rate           || 0.48 },
+    { name: 'starter',      top: (rates.starter_band_top      || 16537)  - (rates.personal_allowance || 12570), rate: rates.starter_rate      || 0.19 },
+    { name: 'basic',        top: (rates.basic_band_top         || 43662)  - (rates.personal_allowance || 12570), rate: rates.basic_rate         || 0.20 },
+    { name: 'intermediate', top: (rates.intermediate_band_top  || 75000)  - (rates.personal_allowance || 12570), rate: rates.intermediate_rate  || 0.21 },
+    { name: 'higher',       top: (rates.higher_rate_threshold  || 125140) - (rates.personal_allowance || 12570), rate: rates.higher_rate        || 0.42 },
+    { name: 'advanced',     top: (rates.advanced_band_top      || 150000) - (rates.personal_allowance || 12570), rate: rates.advanced_rate      || 0.45 },
+    { name: 'top',          top: Infinity,                                                                        rate: rates.top_rate           || 0.48 },
   ];
 
   let tax = 0;
@@ -162,16 +141,13 @@ function calcScottishIncomeTax(taxableNonDivIncome, rates, bandExtension = 0) {
 // DIVIDEND TAX — UK-wide rates (even for Scottish taxpayers)
 // Dividend allowance OCCUPIES band space — does not exempt
 // ══════════════════════════════════════════════════════════════════════════════
-// `bandExtension` is the gross relief-able personal pension contribution.
-// It extends both the basic rate band top and the higher rate threshold,
-// delivering pension relief on the dividend tax portion.
 
-function calcDividendTax(dividendIncome, nonDivTaxableIncome, rates, bandExtension = 0) {
+function calcDividendTax(dividendIncome, nonDivTaxableIncome, rates) {
   if (dividendIncome <= 0) return { tax: 0, breakdown: [] };
 
   const divAllowance = rates.dividend_allowance || 500;
-  const brt          = (rates.basic_rate_threshold  || 50270)  + bandExtension;  // extended
-  const hrt          = (rates.higher_rate_threshold || 125140) + bandExtension;  // extended
+  const brt          = rates.basic_rate_threshold  || 50270;
+  const hrt          = rates.higher_rate_threshold || 125140;
   const pa           = rates.personal_allowance    || 12570;
 
   // Dividends sit on top of non-div income
@@ -308,19 +284,14 @@ function calcSection24Credit(finCosts, rentalProfit, adjustedIncomeAbovePA, rate
 // ══════════════════════════════════════════════════════════════════════════════
 
 async function calculateTaxLiability(userId, taxYear = '2026/27') {
-  // Load user profile — includes pension fields from migration 034
+  // Load user profile
   const userResult = await query(
     `SELECT income_structure, is_scottish_taxpayer, is_cis_worker,
             is_ltd_director, is_vat_registered, is_vat_registered,
             receives_rental_income, receives_partnership,
             date_of_birth, partnership_profit_share_pct,
             tax_pot_target,
-            COALESCE(tax_code, '1257L') AS tax_code,
-            COALESCE(annual_personal_pension_net, 0) AS annual_personal_pension_net,
-            COALESCE(annual_employer_pension_contribution, 0) AS annual_employer_pension_contribution,
-            COALESCE(mpaa_triggered, false) AS mpaa_triggered,
-            mpaa_trigger_date,
-            COALESCE(pension_contribution_frequency, 'annual') AS pension_contribution_frequency
+            COALESCE(tax_code, '1257L') AS tax_code
      FROM users WHERE id = $1`,
     [userId]
   );
@@ -399,86 +370,28 @@ async function calculateTaxLiability(userId, taxYear = '2026/27') {
     ? grossPartner * (parseFloat(user.partnership_profit_share_pct) / 100)
     : 0;
 
-  // ════════════════════════════════════════════════════════════════════════
-  // PENSION CONTRIBUTIONS (Tax Engine v4.0, Part 1e)
-  // ════════════════════════════════════════════════════════════════════════
-  // For sole traders: personal pension contribution extends basic rate band,
-  // restores PA in taper zone, and saves income tax via SA. Class 4 NI is
-  // NOT reduced by pension contribution.
-  //
-  // For Ltd directors: employer pension is handled in business.js (Corp Tax
-  // saving). Personal pension here extends bands for salary + dividend tax.
-  // ════════════════════════════════════════════════════════════════════════
-  const pensionRates = await loadPensionRates(taxYear);
-
-  // Compute relevant earnings for pension cap.
-  // Sole trader: trading profit (SE + partnership share).
-  // Ltd director: salary only. For mixed income, use whichever applies.
-  const seRelevantEarnings = totalSE + partnerShare;
-  const paye_as_relevant   = grossPAYE;  // Ltd director salary captured as PAYE
-  const tradingProfitForPension = seRelevantEarnings > 0 ? seRelevantEarnings : paye_as_relevant;
-
-  // Pension engine — handles gross-up, cap, AA (incl tapered/MPAA), excess
-  const pensionResult = calcSoleTraderPension({
-    tradingProfit:               tradingProfitForPension,
-    netPensionContribution:      parseFloat(user.annual_personal_pension_net) || 0,
-    mpaaTriggered:               user.mpaa_triggered,
-    otherIncomeForTaper:         grossDividends + rentalProfit + (seRelevantEarnings > 0 ? grossPAYE : 0),
-  }, pensionRates);
-
-  // Employer pension contribution (Ltd director only) — also counts toward AA
-  // and adjusts adjusted income for taper. Combined check below.
-  const employerPensionGross = parseFloat(user.annual_employer_pension_contribution) || 0;
-  const totalPensionInputForAA = pensionResult.gross_pension_contribution + employerPensionGross;
-
-  // Band extension applied to all rate-band calculations downstream
-  const bandExtension = pensionResult.band_extension;
-
   // Total income for PA taper
   const totalIncome = grossPAYE + totalSE + partnerShare + rentalProfit + grossDividends;
-  // PA calc — pass pension contribution for restoration in £100k–£125,140 zone
-  const effectivePA = calcEffectivePA(totalIncome, rates, pensionResult.pa_taper_reduction, effectivePAOverride);
+  const effectivePA = calcEffectivePA(totalIncome, rates);
 
   // Taxable non-dividend income (band stacking: PAYE → SE → partner → rental)
   const totalNonDiv    = grossPAYE + totalSE + partnerShare + rentalProfit;
   const taxableNonDiv  = Math.max(0, totalNonDiv - effectivePA);
 
-  // Income tax on non-dividend income — with band extension from pension
+  // Income tax on non-dividend income
   let itNonDiv = 0;
   let itBreakdown = [];
   if (user.is_scottish_taxpayer) {
-    const result = calcScottishIncomeTax(taxableNonDiv, rates, bandExtension);
+    const result = calcScottishIncomeTax(taxableNonDiv, rates);
     itNonDiv     = result.tax;
     itBreakdown  = result.breakdown;
   } else {
-    itNonDiv = calcUKIncomeTax(taxableNonDiv, rates, bandExtension);
+    itNonDiv = calcUKIncomeTax(taxableNonDiv, rates);
   }
 
-  // Dividend tax (UK-wide even for Scottish taxpayers) — with band extension
-  const divResult = calcDividendTax(grossDividends, taxableNonDiv, rates, bandExtension);
+  // Dividend tax (UK-wide even for Scottish taxpayers)
+  const divResult = calcDividendTax(grossDividends, taxableNonDiv, rates);
   const itDividends = divResult.tax;
-
-  // ────────────────────────────────────────────────────────────────────────
-  // Pension — baseline (NO pension) for saving calculation
-  // ────────────────────────────────────────────────────────────────────────
-  const effectivePABaseline = calcEffectivePA(totalIncome, rates, 0, effectivePAOverride);
-  const taxableNonDivBaseline = Math.max(0, totalNonDiv - effectivePABaseline);
-  const itNonDivBaseline = user.is_scottish_taxpayer
-    ? calcScottishIncomeTax(taxableNonDivBaseline, rates, 0).tax
-    : calcUKIncomeTax(taxableNonDivBaseline, rates, 0);
-  const itDividendsBaseline = calcDividendTax(grossDividends, taxableNonDivBaseline, rates, 0).tax;
-  const incomeTaxSavingFromPension = Math.round(
-    ((itNonDivBaseline + itDividendsBaseline) - (itNonDiv + itDividends)) * 100
-  ) / 100;
-
-  // Annual allowance charge if total contributions exceed AA (combined check)
-  const aaExcessTotal = Math.max(0, totalPensionInputForAA - pensionResult.annual_allowance);
-  const aaCharge = calcAnnualAllowanceCharge(
-    aaExcessTotal,
-    taxableNonDiv + grossDividends,
-    user.is_scottish_taxpayer,
-    { ...rates, ...pensionRates }
-  );
 
   // Section 24 credit (rental income — Part 1d)
   let s24Credit = 0, s24NewForward = 0;
@@ -495,12 +408,9 @@ async function calculateTaxLiability(userId, taxYear = '2026/27') {
   // Total income tax before Section 24 credit
   const itBeforeS24 = Math.round((itNonDiv + itDividends) * 100) / 100;
   // Net income tax after Section 24 credit (cannot go below 0)
-  const itAfterS24  = Math.max(0, Math.round((itBeforeS24 - s24Credit) * 100) / 100);
-  // Final income tax = after S24 + annual allowance charge (if any)
-  const itTotal     = Math.round((itAfterS24 + aaCharge) * 100) / 100;
+  const itTotal     = Math.max(0, Math.round((itBeforeS24 - s24Credit) * 100) / 100);
 
   // National Insurance — SE profit only (Class 2 + Class 4)
-  // NOTE: Pension contributions do NOT reduce Class 4 NI for sole traders.
   const niResult = calcNationalInsurance(totalSE + partnerShare, user.date_of_birth, rates);
 
   // MTD flag (Build Note 7)
@@ -531,35 +441,8 @@ async function calculateTaxLiability(userId, taxYear = '2026/27') {
   if (mtdRequired) {
     disclosures.push({ type: 'MTD_REQUIRED', copy: 'Your income level may require you to use Making Tax Digital from April 2026.' });
   }
-  if (pensionResult.gross_pension_contribution > 0 || employerPensionGross > 0) {
-    disclosures.push({
-      type: 'PENSION_CALCULATION',
-      copy: 'Pension calculations are estimates based on the figures you provide and current 2026/27 tax rates. FlexFlow is a calculation tool and is not authorised to give regulated financial advice. Speak to your accountant or a regulated pension adviser before making contribution decisions.',
-    });
-  }
-  if (pensionResult.taper_applied) {
-    disclosures.push({
-      type: 'PENSION_TAPERED_AA',
-      copy: 'Your annual pension allowance has been reduced due to high adjusted income (over £260,000). Your effective allowance is shown alongside any excess contribution.',
-    });
-  }
-  if (pensionResult.mpaa_applied) {
-    disclosures.push({
-      type: 'PENSION_MPAA',
-      copy: 'You have flexibly accessed a defined contribution pension, so the Money Purchase Annual Allowance of £10,000 applies.',
-    });
-  }
-  if (aaCharge > 0) {
-    disclosures.push({
-      type: 'PENSION_AA_CHARGE',
-      copy: 'Your total pension contributions exceed your annual allowance. An annual allowance charge applies on the excess at your marginal income tax rate.',
-    });
-  }
 
   // Write results to tax_calculations table
-  // NOTE: pension figures are returned in the API response but not yet
-  // persisted to tax_calculations table. Add migration 036 if persistence
-  // becomes a requirement (e.g. for monthly history / reports).
   await writeTaxCalculation(userId, taxYear, {
     grossPAYE, grossSE: totalSE, grossDividends, grossRental, partnerShare,
     effectivePA, itTotal, niResult, s24Credit, s24NewForward,
@@ -607,32 +490,6 @@ async function calculateTaxLiability(userId, taxYear = '2026/27') {
     total_liability:    totalLiability,
     monthly_tax_pot:    monthlyTaxPot,
     mtd_required:       mtdRequired,
-    // Pension (Tax Engine v4.0, Part 1e)
-    pension: {
-      net_contribution:               pensionResult.net_pension_contribution,
-      gross_contribution:             pensionResult.gross_pension_contribution,
-      basic_rate_relief_at_source:    pensionResult.basic_rate_relief_at_source,
-      employer_contribution:          employerPensionGross,
-      total_into_pension_pot:         pensionResult.gross_pension_contribution + employerPensionGross,
-      relief_cap:                     pensionResult.relief_cap,
-      annual_allowance:               pensionResult.annual_allowance,
-      annual_allowance_basis:         pensionResult.annual_allowance_basis,
-      effective_allowance:            pensionResult.effective_allowance,
-      excess_contribution:            pensionResult.excess_contribution,
-      total_pension_input:            totalPensionInputForAA,
-      aa_excess:                      aaExcessTotal,
-      aa_charge:                      aaCharge,
-      income_tax_saving:              incomeTaxSavingFromPension,
-      higher_rate_relief_via_sa:      incomeTaxSavingFromPension,
-      band_extension:                 bandExtension,
-      pa_restored:                    Math.max(0, effectivePA - effectivePABaseline),
-      mpaa_applied:                   pensionResult.mpaa_applied,
-      taper_applied:                  pensionResult.taper_applied,
-      effective_relief_rate_pct:      (pensionResult.gross_pension_contribution + employerPensionGross) > 0
-        ? Math.round(((pensionResult.basic_rate_relief_at_source + incomeTaxSavingFromPension) /
-                      (pensionResult.gross_pension_contribution + employerPensionGross)) * 10000) / 100
-        : 0,
-    },
     disclosures,
     rates_year:         taxYear,
     calculated_at:      new Date().toISOString(),

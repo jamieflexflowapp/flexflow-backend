@@ -77,33 +77,21 @@ const NI = {
  * calculateCorporationTax
  * Calculates the corporation tax liability for a UK Ltd company.
  *
- * @param {number} grossRevenue             — total company income (£)
- * @param {number} allowableExpenses        — total allowable business expenses (£)
- * @param {number} directorSalary           — annual director salary (£, allowable expense)
- * @param {number} associatedCompanies      — number of associated companies (default 0)
- * @param {number} employerPensionContribution — annual employer pension paid by company (£)
- *                                            — allowable deduction under BIM46035
- *                                            — reduces taxable profit, saves CT at marginal rate
- * @returns {object} — full CT breakdown including pension impact
+ * @param {number} grossRevenue        — total company income (£)
+ * @param {number} allowableExpenses   — total allowable business expenses (£)
+ * @param {number} directorSalary      — annual director salary (£, allowable expense)
+ * @param {number} associatedCompanies — number of associated companies (default 0)
+ * @returns {object} — full CT breakdown
  */
 function calculateCorporationTax(
   grossRevenue,
   allowableExpenses = 0,
   directorSalary    = 0,
-  associatedCompanies = 0,
-  employerPensionContribution = 0
+  associatedCompanies = 0
 ) {
-  // Defensive: sanitise all inputs
-  grossRevenue                = Math.max(0, Number(grossRevenue) || 0);
-  allowableExpenses           = Math.max(0, Number(allowableExpenses) || 0);
-  directorSalary              = Math.max(0, Number(directorSalary) || 0);
-  associatedCompanies         = Math.max(0, Number(associatedCompanies) || 0);
-  employerPensionContribution = Math.max(0, Number(employerPensionContribution) || 0);
-
   // Step 1: Calculate taxable profit
-  // Director salary AND employer pension are allowable deductions from company profits.
-  // BIM46035: pension is wholly and exclusively for the trade in normal cases.
-  const totalDeductions  = allowableExpenses + directorSalary + employerPensionContribution;
+  // Director salary is an allowable deduction from company profits
+  const totalDeductions  = allowableExpenses + directorSalary;
   const taxableProfit    = Math.max(0, grossRevenue - totalDeductions);
 
   // Step 2: Adjust thresholds for associated companies
@@ -148,43 +136,21 @@ function calculateCorporationTax(
   // Step 5: Monthly CT accrual (for tax pot)
   const monthlyCtAccrual = Math.round(ctLiability / 12 * 100) / 100;
 
-  // Step 6: Pension impact — baseline CT (without pension) for saving calculation
-  let ctLiabilityNoPension = 0;
-  let corporationTaxSaving = 0;
-  if (employerPensionContribution > 0) {
-    const profitNoPension = Math.max(0, grossRevenue - allowableExpenses - directorSalary);
-    if (profitNoPension <= 0) {
-      ctLiabilityNoPension = 0;
-    } else if (profitNoPension <= lowerThreshold) {
-      ctLiabilityNoPension = Math.round(profitNoPension * CT.SMALL_PROFITS_RATE * 100) / 100;
-    } else if (profitNoPension <= upperThreshold) {
-      const grossCTnp = profitNoPension * CT.MAIN_RATE;
-      const reliefNp  = CT.MARGINAL_FRACTION * (upperThreshold - profitNoPension);
-      ctLiabilityNoPension = Math.round(Math.max(0, grossCTnp - reliefNp) * 100) / 100;
-    } else {
-      ctLiabilityNoPension = Math.round(profitNoPension * CT.MAIN_RATE * 100) / 100;
-    }
-    corporationTaxSaving = Math.round((ctLiabilityNoPension - ctLiability) * 100) / 100;
-  }
-
   return {
-    gross_revenue:                      Math.round(grossRevenue * 100) / 100,
-    allowable_expenses:                 Math.round(allowableExpenses * 100) / 100,
-    director_salary:                    Math.round(directorSalary * 100) / 100,
-    employer_pension_contribution:      Math.round(employerPensionContribution * 100) / 100,
-    total_deductions:                   Math.round(totalDeductions * 100) / 100,
-    taxable_profit:                     taxableProfit,
-    ct_liability:                       ctLiability,
-    ct_liability_no_pension:            ctLiabilityNoPension,
-    corporation_tax_saving_from_pension: corporationTaxSaving,
-    effective_rate:                     Math.round(effectiveRate * 10000) / 10000,
-    effective_rate_pct:                 Math.round(effectiveRate * 10000) / 100,
+    gross_revenue:        Math.round(grossRevenue * 100) / 100,
+    allowable_expenses:   Math.round(allowableExpenses * 100) / 100,
+    director_salary:      Math.round(directorSalary * 100) / 100,
+    total_deductions:     Math.round(totalDeductions * 100) / 100,
+    taxable_profit:       taxableProfit,
+    ct_liability:         ctLiability,
+    effective_rate:       Math.round(effectiveRate * 10000) / 10000,
+    effective_rate_pct:   Math.round(effectiveRate * 10000) / 100,
     band,
-    lower_threshold:                    lowerThreshold,
-    upper_threshold:                    upperThreshold,
-    post_ct_profit:                     postCtProfit,
-    monthly_ct_accrual:                 monthlyCtAccrual,
-    associated_companies:               associatedCompanies,
+    lower_threshold:      lowerThreshold,
+    upper_threshold:      upperThreshold,
+    post_ct_profit:       postCtProfit,
+    monthly_ct_accrual:   monthlyCtAccrual,
+    associated_companies: associatedCompanies,
   };
 }
 
@@ -441,25 +407,22 @@ function calculateAllowableExpenses(expenses = []) {
  * @returns {object} — complete business dashboard data
  */
 function calculateBusinessDashboard({
-  companyBankBalance         = 0,
-  grossRevenueFY             = 0,
-  allowableExpensesFY        = 0,
-  directorSalaryAnnual       = 12570,
-  ytdDividendsTaken          = 0,
-  proposedDividend           = 0,
-  associatedCompanies        = 0,
-  isScottish                 = false,
-  employerPensionContribution = 0,
+  companyBankBalance   = 0,
+  grossRevenueFY       = 0,
+  allowableExpensesFY  = 0,
+  directorSalaryAnnual = 12570,
+  ytdDividendsTaken    = 0,
+  proposedDividend     = 0,
+  associatedCompanies  = 0,
+  isScottish           = false,
 } = {}) {
 
   // ── Corp Tax ───────────────────────────────────────────────────────────────
-  // Employer pension is a deductible expense — reduces taxable profit + saves CT.
   const ct = calculateCorporationTax(
     grossRevenueFY,
     allowableExpensesFY,
     directorSalaryAnnual,
-    associatedCompanies,
-    employerPensionContribution
+    associatedCompanies
   );
 
   // ── CT Reserve (portion of bank balance reserved for HMRC) ────────────────

@@ -56,7 +56,9 @@ const incomeRoutes      = require('./routes/income');
 app.use('/income',      incomeRoutes);
 // Session D: Income Smoothing Engine ✅
 const taxRoutes         = require('./routes/tax');
+const pensionRoutes     = require('./routes/pension');
 app.use('/tax',         taxRoutes);
+app.use('/pension',     pensionRoutes);
 // Session E: Tax Engine ✅
 
 const expensesRoutes    = require('./routes/expenses');
