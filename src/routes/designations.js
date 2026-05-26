@@ -1,9 +1,6 @@
 // ════════════════════════════════════════════════════════════════════════════
 // /designations — Account Designation API
 //
-// v2 — fixed auth middleware import to match project convention
-//      (was: requireAuth, now: verifyToken from ../middleware/auth)
-//
 // Endpoints:
 //   GET    /designations                  → list current designations for user
 //   POST   /designations                  → bulk replace designations for user
@@ -20,13 +17,13 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
-const { verifyToken } = require('../middleware/auth');
+const { verifyToken: requireAuth } = require('../middleware/auth');
 
 const VALID_TYPES = ['spending', 'tax', 'pension', 'future_earnings'];
 
 // ─── GET /designations ──────────────────────────────────────────────────────
 // Returns the current user's designations grouped by type.
-router.get('/', verifyToken, async (req, res) => {
+router.get('/', requireAuth, async (req, res) => {
   try {
     const { rows } = await db.query(
       `SELECT bank_account_id, account_label, account_provider, designation_type,
@@ -64,7 +61,7 @@ router.get('/', verifyToken, async (req, res) => {
 //     ...
 //   ]
 // }
-router.post('/', verifyToken, async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   const { designations } = req.body;
   if (!Array.isArray(designations)) {
     return res.status(400).json({ error: 'designations must be an array' });
@@ -90,55 +87,55 @@ router.post('/', verifyToken, async (req, res) => {
     });
   }
 
-  // Use the pool-shared client pattern from other routes if available,
-  // else fall back to db.query directly.
-  const client = (db.getClient && typeof db.getClient === 'function')
-    ? await db.getClient()
-    : null;
-
+  const client = await db.getClient();
   try {
-    if (client) await client.query('BEGIN');
+    await client.query('BEGIN');
 
     // Clear existing designations for this user
-    const delQuery = 'DELETE FROM account_designations WHERE user_id = $1';
-    if (client) await client.query(delQuery, [req.user.id]);
-    else await db.query(delQuery, [req.user.id]);
+    await client.query(
+      'DELETE FROM account_designations WHERE user_id = $1',
+      [req.user.id]
+    );
 
     // Insert new rows (one per account+type combo)
     for (const d of designations) {
       for (const type of d.types) {
-        const insQuery = `INSERT INTO account_designations
+        await client.query(
+          `INSERT INTO account_designations
              (user_id, bank_account_id, account_label, account_provider, designation_type)
-           VALUES ($1, $2, $3, $4, $5)`;
-        const insParams = [
-          req.user.id, d.bankAccountId, d.accountLabel || null,
-          d.provider || null, type
-        ];
-        if (client) await client.query(insQuery, insParams);
-        else await db.query(insQuery, insParams);
+           VALUES ($1, $2, $3, $4, $5)`,
+          [req.user.id, d.bankAccountId, d.accountLabel || null,
+           d.provider || null, type]
+        );
       }
     }
 
-    if (client) await client.query('COMMIT');
+    await client.query('COMMIT');
     res.json({ success: true, count: designations.length });
   } catch (err) {
-    if (client) await client.query('ROLLBACK');
+    await client.query('ROLLBACK');
     console.error('POST /designations failed:', err);
     res.status(500).json({ error: 'Could not save designations' });
   } finally {
-    if (client) client.release();
+    client.release();
   }
 });
 
 // ─── GET /designations/balance/:type ────────────────────────────────────────
 // Returns the resolved balance for a given designation type.
-// STUB until TrueLayer balance polling is wired.
-router.get('/balance/:type', verifyToken, async (req, res) => {
+// For 'spending', returns sum of all spending-tagged account balances MINUS
+// the ring-fenced amounts (tax pot expected balance, pension pot expected, etc.)
+// when those tags share the same account.
+//
+// NOTE: this is a stub for now — needs TrueLayer balance integration. Returns
+// a sample shape so the frontend can be built against the expected response.
+router.get('/balance/:type', requireAuth, async (req, res) => {
   const { type } = req.params;
   if (!VALID_TYPES.includes(type)) {
     return res.status(400).json({ error: 'Invalid designation type' });
   }
 
+  // STUB: full integration to be wired up alongside TrueLayer balance polling.
   res.json({
     designationType: type,
     balance: 0,

@@ -86,11 +86,24 @@ router.post('/profile', async (req, res) => {
       onboarding_step,
     } = req.body;
 
+    // Map frontend labels → internal S-codes (Phase 4.5 fix)
+    const STRUCTURE_MAP = {
+      sole_trader:   'S1',
+      ltd_director:  'S2',
+      partnership:   'S13',
+      mixed:         'S3a',
+    };
+    const mappedStructure = income_structure
+      ? (STRUCTURE_MAP[income_structure] || income_structure)
+      : income_structure;
+
     // Validate income_structure if provided
     const validStructures = ['S1','S2','S3a','S3b','S3c','S3d','S10','S12a'];
-    if (income_structure && !validStructures.includes(income_structure)) {
+    if (mappedStructure && !validStructures.includes(mappedStructure)) {
       return res.status(400).json({ error: 'Invalid income structure.' });
     }
+    // Use mapped value going forward
+    if (income_structure) Object.assign(req.body, { income_structure: mappedStructure });
 
     // Scottish taxpayer auto-detection from postcode
     // Scottish postcode prefixes: AB DD DG EH FK G HS IV KA KW KY ML PA PH TD ZE
@@ -113,7 +126,7 @@ router.post('/profile', async (req, res) => {
       }
     };
 
-    addField('income_structure',          income_structure);
+    addField('income_structure',          mappedStructure || income_structure);
     if (tax_code) {
       addField('tax_code',              tax_code.toUpperCase().trim());
       addField('tax_code_updated_at',   new Date().toISOString());

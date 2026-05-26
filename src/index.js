@@ -21,6 +21,11 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// ── camelCase response middleware (Phase 4.5) ─────────────────────────────
+// Converts snake_case DB/backend fields to camelCase for React Native frontend.
+const { camelizeMiddleware } = require('./middleware/camelize');
+app.use(camelizeMiddleware);
+
 // ── Health check ───────────────────────────────────────────────────────────────
 app.get('/health', async (req, res) => {
   try {
@@ -46,10 +51,7 @@ app.use('/auth',        authRoutes);
 app.use('/onboarding',  onboardingRoutes);
 
 const truelayerRoutes   = require('./routes/truelayer');
-app.use("/truelayer", truelayerRoutes);
-
-const subscriptionRoutes = require("./routes/subscriptions");
-app.use("/subscriptions", subscriptionRoutes);
+app.use('/truelayer',   truelayerRoutes);
 const committedBillsRoutes = require('./routes/committed_bills');
 app.use('/committed-bills', committedBillsRoutes);
 const dividendsRoutes = require('./routes/dividends');
@@ -59,11 +61,7 @@ const incomeRoutes      = require('./routes/income');
 app.use('/income',      incomeRoutes);
 // Session D: Income Smoothing Engine ✅
 const taxRoutes         = require('./routes/tax');
-const pensionRoutes     = require('./routes/pension');
-const designationRoutes = require('./routes/designations');
 app.use('/tax',         taxRoutes);
-app.use('/pension',     pensionRoutes);
-app.use('/designations', designationRoutes);
 // Session E: Tax Engine ✅
 
 const expensesRoutes    = require('./routes/expenses');
@@ -77,6 +75,17 @@ const notificationsRoutes   = require('./routes/notifications');
 app.use('/reports',        reportsRoutes);
 app.use('/notifications',  notificationsRoutes);
 // Session J: Report Generation Engine ✅ — PHASE 3 COMPLETE
+
+// ── Phase 4.5 routes ─────────────────────────────────────────────────────────
+const subscriptionRoutes  = require('./routes/subscriptions');
+const pensionRoutes        = require('./routes/pension_route');
+const businessRoutes       = require('./routes/business_route');
+const designationRoutes    = require('./routes/designations');
+
+app.use('/subscriptions', subscriptionRoutes);
+app.use('/pension',       pensionRoutes);
+app.use('/business',      businessRoutes);
+app.use('/designations',  designationRoutes);
 
 // ── 404 handler ───────────────────────────────────────────────────────────────
 app.use((req, res) => {
@@ -171,4 +180,3 @@ app.listen(PORT, async () => {
 });
 
 module.exports = app;
-

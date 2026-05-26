@@ -24,3 +24,35 @@ router.post('/refresh',             authController.refresh);
 router.post('/logout',              authController.logout);
 
 module.exports = router;
+
+// GET /auth/me — return current user profile
+const { verifyToken } = require('../middleware/auth');
+router.get('/me', verifyToken, async (req, res) => {
+  try {
+    const { query } = require('../config/database');
+    const r = await query(
+      `SELECT id, full_name, email, plan, income_structure, tax_code,
+              is_scottish_taxpayer, onboarding_complete, director_salary_annual,
+              dividend_frequency, receives_pension
+       FROM users WHERE id = $1`,
+      [req.user.userId]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'User not found' });
+    const u = r.rows[0];
+    res.json({
+      id:                   u.id,
+      full_name:            u.full_name,
+      email:                u.email,
+      plan:                 u.plan || 'free',
+      income_structure:     u.income_structure,
+      tax_code:             u.tax_code || '1257L',
+      is_scottish_taxpayer: !!u.is_scottish_taxpayer,
+      onboarding_complete:  !!u.onboarding_complete,
+      director_salary_annual: u.director_salary_annual,
+      dividend_frequency:   u.dividend_frequency,
+      receives_pension:     !!u.receives_pension,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to load profile' });
+  }
+});
