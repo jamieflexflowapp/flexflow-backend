@@ -46,7 +46,10 @@ app.use('/auth',        authRoutes);
 app.use('/onboarding',  onboardingRoutes);
 
 const truelayerRoutes   = require('./routes/truelayer');
-app.use('/truelayer',   truelayerRoutes);
+app.use("/truelayer", truelayerRoutes);
+
+const subscriptionRoutes = require("./routes/subscriptions");
+app.use("/subscriptions", subscriptionRoutes);
 const committedBillsRoutes = require('./routes/committed_bills');
 app.use('/committed-bills', committedBillsRoutes);
 const dividendsRoutes = require('./routes/dividends');
@@ -168,3 +171,4 @@ app.listen(PORT, async () => {
 });
 
 module.exports = app;
+
