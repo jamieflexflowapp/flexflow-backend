@@ -80,11 +80,13 @@ app.use('/notifications',  notificationsRoutes);
 const subscriptionRoutes  = require('./routes/subscriptions');
 const pensionRoutes        = require('./routes/pension_route');
 const businessRoutes       = require('./routes/business_route');
+const transactionRoutes    = require('./routes/transactions');
 const designationRoutes    = require('./routes/designations');
 
 app.use('/subscriptions', subscriptionRoutes);
 app.use('/pension',       pensionRoutes);
 app.use('/business',      businessRoutes);
+app.use('/transactions',  transactionRoutes);
 app.use('/designations',  designationRoutes);
 
 // ── 404 handler ───────────────────────────────────────────────────────────────
