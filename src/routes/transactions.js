@@ -24,7 +24,19 @@ router.get('/auto-confirmed', async (req, res) => {
         AND category != 'transfer'
         AND user_confirmed IS NULL
       ORDER BY transaction_date DESC
-      LIMIT 100
+    `, [userId, fyStartStr]);
+
+    const totalResult = await query(`
+      SELECT COUNT(*) as total FROM transactions
+      WHERE user_id = $1 AND transaction_type = 'DEBIT'
+        AND transaction_date >= $2 AND category != 'transfer'
+    `, [userId, fyStartStr]);
+
+    const reviewedResult = await query(`
+      SELECT COUNT(*) as reviewed FROM transactions
+      WHERE user_id = $1 AND transaction_type = 'DEBIT'
+        AND transaction_date >= $2 AND category != 'transfer'
+        AND user_confirmed IS NOT NULL
     `, [userId, fyStartStr]);
 
     const transactions = rows.map(r => ({
@@ -40,7 +52,10 @@ router.get('/auto-confirmed', async (req, res) => {
       suggestion:  null,
     }));
 
-    res.json({ transactions, count: transactions.length });
+    const total = parseInt(totalResult.rows[0].total);
+    const reviewed = parseInt(reviewedResult.rows[0].reviewed);
+
+    res.json({ transactions, count: transactions.length, total, reviewed, pending: total - reviewed });
   } catch (err) {
     console.error('[TRANSACTIONS]', err.message);
     res.status(500).json({ error: 'Failed to load transactions' });
