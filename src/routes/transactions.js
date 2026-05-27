@@ -22,6 +22,7 @@ router.get('/auto-confirmed', async (req, res) => {
         AND transaction_type = 'DEBIT'
         AND transaction_date >= $2
         AND category != 'transfer'
+        AND user_confirmed IS NULL
       ORDER BY transaction_date DESC
       LIMIT 100
     `, [userId, fyStartStr]);
@@ -62,6 +63,7 @@ router.get('/pending-review', async (req, res) => {
         AND transaction_type = 'CREDIT'
         AND transaction_date >= $2
         AND category != 'transfer'
+        AND user_confirmed IS NULL
       ORDER BY transaction_date DESC
       LIMIT 100
     `, [userId, fyStartStr]);
@@ -84,6 +86,25 @@ router.get('/pending-review', async (req, res) => {
   } catch (err) {
     console.error('[TRANSACTIONS]', err.message);
     res.status(500).json({ error: 'Failed to load transactions' });
+  }
+});
+
+// PATCH /transactions/:id/confirm — save user's expense decision
+router.patch('/:id/confirm', async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { id } = req.params;
+    const { confirmed, businessPct } = req.body; // confirmed: true/false, businessPct: 0-100
+
+    await query(
+      `UPDATE transactions SET user_confirmed = $1 WHERE id = $2 AND user_id = $3`,
+      [confirmed, id, userId]
+    );
+
+    res.json({ success: true, id, confirmed });
+  } catch (err) {
+    console.error('[TRANSACTIONS CONFIRM]', err.message);
+    res.status(500).json({ error: 'Failed to save decision' });
   }
 });
 
