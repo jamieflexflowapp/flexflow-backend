@@ -43,14 +43,24 @@ router.get('/personal', async (req, res) => {
     }
 
     // Return cached result with metadata
+    const grossAvg = parseFloat(user.gross_avg_monthly_se) || 0;
     return res.json({
       personal_income:        parseFloat(user.personal_income) || 0,
+      personalIncome:         parseFloat(user.personal_income) || 0,
       confidence_level:       user.confidence_level || 'LOW',
-      gross_avg_monthly_se:   parseFloat(user.gross_avg_monthly_se) || 0,
+      confidenceLevel:        user.confidence_level || 'LOW',
+      confidence:             user.confidence_level || 'LOW',
+      gross_avg_monthly_se:   grossAvg,
+      grossAvgMonthlySe:      grossAvg,
+      fytdTotal:              grossAvg * (user.months_of_data || 0),
       reserve_amount:         parseFloat(user.reserve_amount) || 0,
       monthly_tax_allocation: parseFloat(user.tax_pot_target) || 0,
+      monthlyTaxAllocation:   parseFloat(user.tax_pot_target) || 0,
       months_of_data:         user.months_of_data || 0,
+      monthsOfData:           user.months_of_data || 0,
       last_calculated:        user.last_smoothing_calculated,
+      volatility:             { label: 'STABLE', stdDeviation: 0, copy: 'Calculating...' },
+      sources:                [],
     });
 
   } catch (err) {
