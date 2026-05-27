@@ -96,17 +96,25 @@ async function register(req, res) {
 
     // Check if email already registered
     const existing = await query(
-      'SELECT id, email_verified FROM users WHERE email = $1',
+      'SELECT id, email_verified, verification_expires FROM users WHERE email = $1',
       [email.toLowerCase().trim()]
     );
     if (existing.rows.length > 0) {
       if (!existing.rows[0].email_verified) {
-        return res.status(409).json({
-          error: 'An account with this email exists but is not verified. Please check your inbox or resend the code.',
-          unverified: true
-        });
+        // Auto-delete if verification has expired — lets user start fresh cleanly
+        const expiry = existing.rows[0].verification_expires;
+        if (expiry && new Date() > new Date(expiry)) {
+          await query('DELETE FROM users WHERE email = $1', [email.toLowerCase().trim()]);
+          // Fall through to fresh registration below
+        } else {
+          return res.status(409).json({
+            error: 'An account with this email exists but is not verified. Please check your inbox or resend the code.',
+            unverified: true
+          });
+        }
+      } else {
+        return res.status(409).json({ error: 'An account with this email already exists.' });
       }
-      return res.status(409).json({ error: 'An account with this email already exists.' });
     }
 
     // Hash password

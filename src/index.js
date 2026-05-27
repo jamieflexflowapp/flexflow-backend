@@ -180,3 +180,16 @@ app.listen(PORT, async () => {
 });
 
 module.exports = app;
+
+// Nightly cleanup — delete unverified accounts older than 24 hours
+const { query: dbQuery } = require('./config/database');
+setInterval(async () => {
+  try {
+    const r = await dbQuery(
+      "DELETE FROM users WHERE email_verified = false AND verification_expires < NOW() - INTERVAL '24 hours'"
+    );
+    if (r.rowCount > 0) console.log(`[Cleanup] Removed ${r.rowCount} expired unverified account(s)`);
+  } catch (err) {
+    console.error('[Cleanup] Error:', err.message);
+  }
+}, 1000 * 60 * 60 * 24); // every 24 hours
