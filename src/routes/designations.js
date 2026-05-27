@@ -31,7 +31,7 @@ router.get('/', requireAuth, async (req, res) => {
        FROM account_designations
        WHERE user_id = $1
        ORDER BY designation_type, account_label`,
-      [req.user.id]
+      [req.user.userId || req.user.id]
     );
 
     // Group by designation_type for easier consumption by the frontend.
@@ -94,7 +94,7 @@ router.post('/', requireAuth, async (req, res) => {
     // Clear existing designations for this user
     await client.query(
       'DELETE FROM account_designations WHERE user_id = $1',
-      [req.user.id]
+      [req.user.userId || req.user.id]
     );
 
     // Insert new rows (one per account+type combo)
@@ -104,7 +104,7 @@ router.post('/', requireAuth, async (req, res) => {
           `INSERT INTO account_designations
              (user_id, bank_account_id, account_label, account_provider, designation_type)
            VALUES ($1, $2, $3, $4, $5)`,
-          [req.user.id, d.bankAccountId, d.accountLabel || null,
+          [req.user.userId || req.user.id, d.bankAccountId, d.accountLabel || null,
            d.provider || null, type]
         );
       }
