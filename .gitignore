@@ -34,3 +34,4 @@ coverage/
 *.temp
 *.bak
 .env.save
+.env

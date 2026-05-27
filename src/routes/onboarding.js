@@ -84,6 +84,12 @@ router.post('/profile', async (req, res) => {
 
       // Step tracking
       onboarding_step,
+
+      // Additional fields referenced below but missing from destructuring
+      tax_code,
+      director_salary_annual,
+      dividend_frequency,
+      trading_duration,
     } = req.body;
 
     // Map frontend labels → internal S-codes (Phase 4.5 fix)
@@ -159,6 +165,7 @@ router.post('/profile', async (req, res) => {
     addField('postcode',                  postcode);
     addField('city',                      city);
     addField('onboarding_step',           onboarding_step);
+    addField('trading_duration',          trading_duration);
 
     if (updates.length === 0) {
       return res.status(400).json({ error: 'No profile fields provided.' });
@@ -212,7 +219,6 @@ router.post('/complete', async (req, res) => {
     const errors = [];
     if (!user.income_structure) errors.push('Income structure is required.');
     if (!user.full_name)        errors.push('Full name is required.');
-    if (!user.date_of_birth)    errors.push('Date of birth is required (used for tax calculations).');
 
     if (errors.length > 0) {
       return res.status(400).json({
