@@ -94,12 +94,54 @@ router.patch('/:id/confirm', async (req, res) => {
   try {
     const userId = req.user.userId;
     const { id } = req.params;
-    const { confirmed, businessPct } = req.body; // confirmed: true/false, businessPct: 0-100
+    const { confirmed, businessPct = 100 } = req.body;
 
+    // Save decision on transaction
     await query(
       `UPDATE transactions SET user_confirmed = $1 WHERE id = $2 AND user_id = $3`,
       [confirmed, id, userId]
     );
+
+    if (confirmed === true) {
+      // Fetch transaction details
+      const txn = (await query(
+        `SELECT description, merchant_name, amount, transaction_date, category FROM transactions WHERE id = $1`,
+        [id]
+      )).rows[0];
+
+      if (txn) {
+        const now = new Date();
+        const fyYear = (now.getMonth() > 3 || (now.getMonth() === 3 && now.getDate() >= 6))
+          ? now.getFullYear() : now.getFullYear() - 1;
+        const taxYear = `${fyYear}/${String(fyYear + 1).slice(-2)}`;
+        const amount = Math.abs(parseFloat(txn.amount));
+        const deductAmount = Math.round(amount * (businessPct / 100) * 100) / 100;
+
+        // Upsert into expense_records
+        await query(`
+          INSERT INTO expense_records
+            (user_id, description, amount, deduct_amount, category, date, tax_year, confirmed, auto_detected, transaction_id)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, true, false, $8)
+          ON CONFLICT (transaction_id) DO UPDATE SET
+            confirmed = true, deduct_amount = $4
+        `, [
+          userId,
+          txn.description || txn.merchant_name || 'Expense',
+          amount,
+          deductAmount,
+          txn.category || 'expense',
+          txn.transaction_date,
+          taxYear,
+          id
+        ]);
+      }
+    } else {
+      // Remove from expense_records if rejected
+      await query(
+        `DELETE FROM expense_records WHERE transaction_id = $1 AND user_id = $2`,
+        [id, userId]
+      );
+    }
 
     res.json({ success: true, id, confirmed });
   } catch (err) {
