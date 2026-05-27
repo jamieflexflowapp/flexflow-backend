@@ -34,11 +34,8 @@ router.get('/summary', async (req, res) => {
       [userId, fyStartStr]
     )).rows[0].t);
 
-    const fytdExpenses = parseFloat((await query(
-      `SELECT COALESCE(SUM(ABS(amount)),0) AS t FROM transactions
-       WHERE user_id=$1 AND transaction_type='DEBIT' AND transaction_date>=$2`,
-      [userId, fyStartStr]
-    )).rows[0].t);
+    // Use tracked business expenses only (not raw debits which include transfers etc.)
+    const fytdExpenses = 0; // TODO: wire to expenses table when business expense tracking is built
 
     // Director salary — full annual figure deducted (committed expense)
     const dirSalaryAnnual = parseFloat(u.director_salary_annual || 12570);
