@@ -14,6 +14,10 @@ router.get('/auto-confirmed', async (req, res) => {
       ? now.getFullYear() : now.getFullYear() - 1;
     const fyStartStr = `${fyYear}-04-06`;
 
+    const page = parseInt(req.query.page || '1');
+    const limit = 50;
+    const offset = (page - 1) * limit;
+
     const { rows } = await query(`
       SELECT id, description, merchant_name, amount, transaction_date,
              category, sub_category, transaction_type
@@ -24,7 +28,8 @@ router.get('/auto-confirmed', async (req, res) => {
         AND category != 'transfer'
         AND user_confirmed IS NULL
       ORDER BY transaction_date DESC
-    `, [userId, fyStartStr]);
+      LIMIT $3 OFFSET $4
+    `, [userId, fyStartStr, limit, offset]);
 
     const totalResult = await query(`
       SELECT COUNT(*) as total FROM transactions
