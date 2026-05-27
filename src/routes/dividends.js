@@ -110,8 +110,12 @@ router.post('/calculate-tax', verifyToken, checkOnboardingComplete, async (req, 
 
     // Determine rate based on total income (salary + dividends)
     const totalIncome    = annualSalary + ytdDividends + proposedDiv;
-    const basicThreshold = 50270;
-    const higherThreshold = 125140;
+    const ratesResult    = await require('../config/database').query(
+      "SELECT name, value FROM tax_rates WHERE name IN ('higher_threshold','additional_threshold') AND tax_year = '2026/27'"
+    );
+    const ratesMap = Object.fromEntries(ratesResult.rows.map(r => [r.name, parseFloat(r.value)]));
+    const basicThreshold  = ratesMap['higher_threshold']    || 50270;
+    const higherThreshold = ratesMap['additional_threshold'] || 125140;
 
     let tax = 0;
     let rate = 0;
