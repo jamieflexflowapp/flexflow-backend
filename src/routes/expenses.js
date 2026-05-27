@@ -348,9 +348,20 @@ router.get('/home-office', async (req, res) => {
       [req.user.userId]
     );
     if (result.rows.length === 0) {
-      return res.json({ configured: false, annual_deduction: 0 });
+      return res.json({ configured: false, monthlyHours: 0, annualDeduction: 0 });
     }
-    return res.json({ configured: true, ...result.rows[0] });
+    const r = result.rows[0];
+    return res.json({
+      configured: true,
+      id: r.id,
+      userId: r.user_id,
+      monthlyHours: r.monthly_hours,
+      method: r.method,
+      monthlyDeduction: r.monthly_deduction,
+      annualDeduction: r.annual_deduction,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+    });
   } catch (err) {
     console.error('Home office get error:', err);
     return res.status(500).json({ error: 'Failed to get home office config.' });
@@ -361,17 +372,7 @@ router.post('/home-office', async (req, res) => {
   try {
     const { monthly_hours, method = 'flat_rate' } = req.body;
 
-    if (!monthly_hours || monthly_hours < 25) {
-      return res.status(400).json({
-        error: 'Minimum 25 hours per month required for home office deduction.',
-      });
-    }
-
-    const calc = await calcHomeOfficeDeduction(req.user.userId, monthly_hours, method);
-
-    if (!calc.eligible) {
-      return res.status(400).json({ error: 'Not eligible for home office deduction.', ...calc });
-    }
+    const calc = await calcHomeOfficeDeduction(req.user.userId, monthly_hours || 0, method);
 
     await query(`
       INSERT INTO home_office_config
