@@ -467,4 +467,217 @@ router.get('/accounts/count', verifyToken, async (req, res) => {
   }
 });
 
+
+// ── Token refresh helper ─────────────────────────────────────────────────────
+// TrueLayer access tokens expire after ~1 hour.
+// Call this before any API request — it refreshes if within 5 minutes of expiry.
+
+async function refreshAccessToken(userId, accountId) {
+  // Get current token record
+  const result = await query(
+    `SELECT id, access_token, refresh_token, token_expires_at
+     FROM bank_connections
+     WHERE user_id = $1 AND account_id = $2 AND is_active = true
+     LIMIT 1`,
+    [userId, accountId]
+  );
+
+  if (result.rows.length === 0) throw new Error('No connection found');
+  const conn = result.rows[0];
+
+  // Check if refresh needed (within 5 minutes of expiry)
+  const expiresAt  = new Date(conn.token_expires_at);
+  const fiveMinutes = 5 * 60 * 1000;
+  if (expiresAt - Date.now() > fiveMinutes) {
+    return conn.access_token; // Still valid — return as-is
+  }
+
+  // Refresh the token
+  const tokenResponse = await axios.post(`${TL_AUTH_URL}/connect/token`, {
+    grant_type:    'refresh_token',
+    client_id:     process.env.TRUELAYER_CLIENT_ID,
+    client_secret: process.env.TRUELAYER_CLIENT_SECRET,
+    refresh_token: conn.refresh_token,
+  }, { headers: { 'Content-Type': 'application/json' } });
+
+  const { access_token, refresh_token, expires_in } = tokenResponse.data;
+  const newExpiry = new Date(Date.now() + expires_in * 1000);
+
+  // Store refreshed tokens
+  await query(
+    `UPDATE bank_connections
+     SET access_token = $1, refresh_token = $2,
+         token_expires_at = $3, updated_at = NOW()
+     WHERE user_id = $4 AND account_id = $5`,
+    [access_token, refresh_token, newExpiry, userId, accountId]
+  );
+
+  console.log(`🔄 Token refreshed for user ${userId} account ${accountId}`);
+  return access_token;
+}
+
+
+// ── GET /truelayer/status ─────────────────────────────────────────────────────
+// Returns whether the user has at least one active connected bank account.
+// Frontend uses this to decide whether to show "Connect bank" or live data.
+
+router.get('/status', verifyToken, async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT
+         COUNT(*) FILTER (WHERE is_active = true)                          AS connected_count,
+         MAX(last_synced_at)                                                AS last_synced,
+         COUNT(*) FILTER (WHERE is_active = true AND sync_status = 'error') AS error_count,
+         BOOL_OR(is_active = true AND is_tax_account = true)               AS has_tax_account
+       FROM bank_connections
+       WHERE user_id = $1`,
+      [req.user.userId]
+    );
+
+    const row = result.rows[0];
+    const connectedCount = parseInt(row.connected_count) || 0;
+
+    return res.json({
+      connected:         connectedCount > 0,
+      connected_count:   connectedCount,
+      last_synced:       row.last_synced || null,
+      has_tax_account:   row.has_tax_account || false,
+      has_errors:        parseInt(row.error_count) > 0,
+    });
+  } catch (err) {
+    console.error('Status error:', err.message);
+    return res.status(500).json({ error: 'Failed to get connection status.' });
+  }
+});
+
+
+// ── GET /truelayer/balances ───────────────────────────────────────────────────
+// Returns live balances for designated accounts:
+//   spendingBalance — sum of all accounts designated as 'spending'
+//   taxPotBalance   — sum of all accounts designated as 'tax'
+//
+// Designation is stored in account_designations table (many-to-many).
+// Falls back to bank_connections.is_tax_account for backwards compat.
+//
+// Fetches fresh balances from TrueLayer API (with token refresh).
+// Caches to bank_connections.current_balance — if TrueLayer call fails,
+// returns the last cached value rather than erroring.
+
+router.get('/balances', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    // Get all active connections with their designations
+    const connsResult = await query(
+      `SELECT
+         bc.id, bc.account_id, bc.account_name, bc.access_token,
+         bc.refresh_token, bc.token_expires_at, bc.current_balance,
+         bc.is_tax_account,
+         COALESCE(
+           array_agg(ad.designation_type) FILTER (WHERE ad.designation_type IS NOT NULL),
+           ARRAY[]::text[]
+         ) AS designations
+       FROM bank_connections bc
+       LEFT JOIN account_designations ad
+         ON ad.bank_account_id = bc.account_id AND ad.user_id = $1
+       WHERE bc.user_id = $1 AND bc.is_active = true
+       GROUP BY bc.id, bc.account_name, bc.access_token, bc.refresh_token,
+                bc.token_expires_at, bc.current_balance, bc.is_tax_account`,
+      [userId]
+    );
+
+    const connections = connsResult.rows;
+
+    if (connections.length === 0) {
+      return res.json({
+        connected:       false,
+        spendingBalance: null,
+        taxPotBalance:   null,
+        accounts:        [],
+      });
+    }
+
+    // Fetch live balance for each account from TrueLayer
+    const accountBalances = [];
+
+    for (const conn of connections) {
+      let balance = conn.current_balance || 0;
+
+      try {
+        // Refresh token if needed
+        const accessToken = await refreshAccessToken(userId, conn.account_id);
+
+        // Fetch balance from TrueLayer
+        const balResponse = await axios.get(
+          `${TL_API_URL}/data/v1/accounts/${conn.account_id}/balance`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+
+        const balData = balResponse.data.results?.[0];
+        if (balData) {
+          balance = balData.available !== undefined
+            ? balData.available   // Use available (excludes pending)
+            : balData.current;
+
+          // Cache to DB
+          await query(
+            `UPDATE bank_connections
+             SET current_balance = $1, last_balance_fetch = NOW(), updated_at = NOW()
+             WHERE id = $2`,
+            [balance, conn.id]
+          );
+        }
+      } catch (fetchErr) {
+        // Token refresh or API failed — use cached balance, log and continue
+        console.warn(`Balance fetch failed for account ${conn.account_id}: ${fetchErr.message} — using cached`);
+      }
+
+      accountBalances.push({
+        id:           conn.id,
+        account_id:   conn.account_id,
+        account_name: conn.account_name,
+        balance,
+        designations: conn.designations,
+        is_tax_account: conn.is_tax_account,
+      });
+    }
+
+    // Sum balances by designation
+    // An account can have multiple designations (many-to-many)
+    // Priority: designation table first, is_tax_account fallback
+
+    let spendingBalance = 0;
+    let taxPotBalance   = 0;
+    let hasSpending     = false;
+    let hasTax          = false;
+
+    for (const acc of accountBalances) {
+      const desigs = acc.designations || [];
+
+      // Use designation table if populated, else fall back to is_tax_account flag
+      const isSpending = desigs.includes('spending');
+      const isTax      = desigs.includes('tax') || (desigs.length === 0 && acc.is_tax_account);
+
+      if (isSpending) { spendingBalance += acc.balance; hasSpending = true; }
+      if (isTax)      { taxPotBalance   += acc.balance; hasTax      = true; }
+    }
+
+    // Round to 2dp
+    spendingBalance = Math.round(spendingBalance * 100) / 100;
+    taxPotBalance   = Math.round(taxPotBalance   * 100) / 100;
+
+    return res.json({
+      connected:       true,
+      spendingBalance: hasSpending ? spendingBalance : null,
+      taxPotBalance:   hasTax      ? taxPotBalance   : null,
+      accounts:        accountBalances,
+      fetched_at:      new Date().toISOString(),
+    });
+
+  } catch (err) {
+    console.error('Balances error:', err.message);
+    return res.status(500).json({ error: 'Failed to fetch balances.' });
+  }
+});
+
 module.exports = router;
