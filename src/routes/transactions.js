@@ -120,19 +120,17 @@ router.patch('/:id/confirm', async (req, res) => {
         // Upsert into expense_records
         await query(`
           INSERT INTO expense_records
-            (user_id, description, amount, deduct_amount, category, date, tax_year, confirmed, auto_detected, transaction_id)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, true, false, $8)
-          ON CONFLICT (transaction_id) DO UPDATE SET
-            confirmed = true, deduct_amount = $4
+            (user_id, transaction_id, tax_year, hmrc_category, business_pct, deduct_amount, confirmed, auto_detected)
+          VALUES ($1, $2, $3, $4, $5, $6, true, false)
+          ON CONFLICT (user_id, transaction_id) DO UPDATE SET
+            confirmed = true, business_pct = $5, deduct_amount = $6
         `, [
           userId,
-          txn.description || txn.merchant_name || 'Expense',
-          amount,
-          deductAmount,
-          txn.category || 'expense',
-          txn.transaction_date,
+          id,
           taxYear,
-          id
+          txn.category || 'expense',
+          businessPct,
+          deductAmount
         ]);
       }
     } else {
