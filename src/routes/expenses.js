@@ -405,7 +405,14 @@ router.get('/mileage', async (req, res) => {
       `SELECT * FROM mileage_log WHERE user_id = $1 AND tax_year = $2 ORDER BY journey_date DESC`,
       [req.user.userId, taxYear]
     );
-    return res.json({ ...summary, trips: trips.rows, tax_year: taxYear });
+    const mappedTrips = trips.rows.map(t => ({
+      id: t.id,
+      purpose: t.purpose,
+      miles: parseFloat(t.miles),
+      date: t.journey_date,
+      amount: Math.round((parseFloat(t.miles) * 0.55) * 100) / 100,
+    }));
+    return res.json({ ...summary, trips: mappedTrips, tax_year: taxYear });
   } catch (err) {
     console.error('Mileage get error:', err);
     return res.status(500).json({ error: 'Failed to get mileage.' });
@@ -414,25 +421,38 @@ router.get('/mileage', async (req, res) => {
 
 router.post('/mileage', async (req, res) => {
   try {
-    const { miles, purpose, journey_date } = req.body;
-
-    if (!miles || miles <= 0) return res.status(400).json({ error: 'miles required.' });
-    if (!purpose)             return res.status(400).json({ error: 'purpose required.' });
-
     const taxYear = getCurrentTaxYear();
-    await query(`
-      INSERT INTO mileage_log (user_id, miles, purpose, journey_date, tax_year)
-      VALUES ($1,$2,$3,$4,$5)
-    `, [req.user.userId, miles, purpose,
-        journey_date || new Date().toISOString().split('T')[0], taxYear]);
+    const userId = req.user.userId;
 
-    const summary = await calcMileageDeduction(req.user.userId, taxYear);
-    await recalcTaxableProfit(req.user.userId);
-    return res.json({ message: 'Journey logged.', ...summary });
+    // Accept either a single trip or an array of trips
+    const trips = Array.isArray(req.body.trips) ? req.body.trips
+      : req.body.miles ? [{ miles: req.body.miles, purpose: req.body.purpose, date: req.body.journey_date }]
+      : [];
+
+    if (trips.length === 0) return res.status(400).json({ error: 'No trips provided.' });
+
+    // Clear existing trips for this tax year and re-insert all (full sync)
+    await query(`DELETE FROM mileage_log WHERE user_id = $1 AND tax_year = $2`, [userId, taxYear]);
+
+    for (const trip of trips) {
+      const miles = parseFloat(trip.miles || trip.distance || 0);
+      const purpose = trip.purpose || trip.description || 'Business journey';
+      const date = trip.date || trip.journey_date || new Date().toISOString().split('T')[0];
+      if (miles > 0) {
+        await query(
+          `INSERT INTO mileage_log (user_id, miles, purpose, journey_date, tax_year) VALUES ($1,$2,$3,$4,$5)`,
+          [userId, miles, purpose, date, taxYear]
+        );
+      }
+    }
+
+    const summary = await calcMileageDeduction(userId, taxYear);
+    await recalcTaxableProfit(userId);
+    return res.json({ message: 'Mileage saved.', ...summary });
 
   } catch (err) {
     console.error('Mileage post error:', err);
-    return res.status(500).json({ error: 'Failed to log journey.' });
+    return res.status(500).json({ error: 'Failed to save mileage.' });
   }
 });
 
