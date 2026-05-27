@@ -62,10 +62,13 @@ router.get('/summary', async (req, res) => {
     const availableForDividends = Math.max(0, Math.round((ctTaxableProfit - corpTaxReserve) * 100) / 100);
 
     // Dividend tax (2026/27: 10.75% basic, £500 allowance)
+    // Personal allowance unused by salary offsets dividend income first
+    const personalAllowance = 12570;
+    const unusedPersonalAllowance = Math.max(0, personalAllowance - dirSalaryAnnual);
     const divAllowance = 500;
-    const taxableDivs = Math.max(0, availableForDividends - divAllowance);
+    const taxableDivs = Math.max(0, availableForDividends - unusedPersonalAllowance - divAllowance);
     const basicTop = 50270;
-    const divStartPoint = dirSalaryAnnual + divAllowance;
+    const divStartPoint = Math.max(personalAllowance, dirSalaryAnnual) + divAllowance;
     const basicRoom = Math.max(0, basicTop - Math.max(divStartPoint, 0));
     const inBasic = Math.min(taxableDivs, basicRoom);
     const afterBasic = taxableDivs - inBasic;
