@@ -77,7 +77,7 @@ router.get('/connect', verifyToken, checkOnboardingComplete, checkBankAccountLim
     client_id:     process.env.TRUELAYER_CLIENT_ID,
     scope:         'info accounts balance cards transactions direct_debits standing_orders offline_access',
     redirect_uri:  process.env.TRUELAYER_REDIRECT_URI,
-    providers:     'uk-ob-all uk-oauth-all',
+    providers:     process.env.TRUELAYER_SANDBOX === 'true' ? 'mock' : 'uk-ob-all uk-oauth-all',
     state:         req.user.userId, // Pass userId through OAuth flow
   });
 
@@ -102,13 +102,21 @@ router.get('/callback', async (req, res) => {
     }
 
     // Exchange authorisation code for access + refresh tokens
-    const tokenResponse = await axios.post(`${TL_AUTH_URL}/connect/token`, {
-      grant_type:    'authorization_code',
-      client_id:     process.env.TRUELAYER_CLIENT_ID,
-      client_secret: process.env.TRUELAYER_CLIENT_SECRET,
-      redirect_uri:  process.env.TRUELAYER_REDIRECT_URI,
-      code,
-    }, { headers: { 'Content-Type': 'application/json' } });
+    console.log('Token exchange params:', { grant_type: 'authorization_code', client_id: process.env.TRUELAYER_CLIENT_ID, redirect_uri: process.env.TRUELAYER_REDIRECT_URI, code: code?.slice(0,20) + '...' });
+    const tlBasicAuth = Buffer.from(
+      `${process.env.TRUELAYER_CLIENT_ID}:${process.env.TRUELAYER_CLIENT_SECRET}`
+    ).toString('base64');
+    const tokenResponse = await axios.post(`${TL_AUTH_URL}/connect/token`,
+      new URLSearchParams({
+        grant_type:   'authorization_code',
+        redirect_uri: process.env.TRUELAYER_REDIRECT_URI,
+        code,
+      }).toString(),
+      { headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Basic ${tlBasicAuth}`,
+      }}
+    );
 
     const { access_token, refresh_token, expires_in } = tokenResponse.data;
     const tokenExpiresAt = new Date(Date.now() + expires_in * 1000);
@@ -158,6 +166,8 @@ router.get('/callback', async (req, res) => {
 
   } catch (err) {
     console.error('TrueLayer callback error:', err.message);
+    console.error('TrueLayer callback error detail:', err.response?.data);
+    console.error('TrueLayer callback error status:', err.response?.status);
     return res.redirect(`flexflow://bank-connect?error=connection_failed`);
   }
 });
@@ -493,12 +503,15 @@ async function refreshAccessToken(userId, accountId) {
   }
 
   // Refresh the token
-  const tokenResponse = await axios.post(`${TL_AUTH_URL}/connect/token`, {
-    grant_type:    'refresh_token',
-    client_id:     process.env.TRUELAYER_CLIENT_ID,
-    client_secret: process.env.TRUELAYER_CLIENT_SECRET,
-    refresh_token: conn.refresh_token,
-  }, { headers: { 'Content-Type': 'application/json' } });
+  const tokenResponse = await axios.post(`${TL_AUTH_URL}/connect/token`,
+    new URLSearchParams({
+      grant_type:    'refresh_token',
+      client_id:     process.env.TRUELAYER_CLIENT_ID,
+      client_secret: process.env.TRUELAYER_CLIENT_SECRET,
+      refresh_token: conn.refresh_token,
+    }).toString(),
+    { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+  );
 
   const { access_token, refresh_token, expires_in } = tokenResponse.data;
   const newExpiry = new Date(Date.now() + expires_in * 1000);
