@@ -228,12 +228,13 @@ async function classifyIncome(transaction, user, descLower, absAmount) {
     };
   }
 
-  // Priority 9 (default): SE income
-  const seCompatible = ['S1','S2','S3a','S3b','S3c','S3d','S4','S10','S11'].includes(user.income_structure);
+  // Priority 9 (default): SE income or unmatched Ltd credit
+  const seCompatible = ['S1','S2','S3a','S3b','S3c','S3d','S4','S10','S11','ltd_director'].includes(user.income_structure);
   if (seCompatible) {
+    const incomeType = user.income_structure === 'ltd_director' ? 'se' : 'se';
     return {
       category: 'income', sub_category: 'se_income',
-      income_type: 'se', is_income: true,
+      income_type: incomeType, is_income: true,
       amount_net: absAmount, gross_amount: absAmount,
     };
   }
