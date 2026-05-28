@@ -155,6 +155,48 @@ router.get('/dismissed', async (req, res) => {
   }
 });
 
+// GET /transactions/confirmed — expenses the user confirmed (with deduction details)
+router.get('/confirmed', async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const now = new Date();
+    const fyYear = (now.getMonth() > 3 || (now.getMonth() === 3 && now.getDate() >= 6))
+      ? now.getFullYear() : now.getFullYear() - 1;
+    const taxYear = `${fyYear}/${String(fyYear + 1).slice(-2)}`;
+
+    const { rows } = await query(`
+      SELECT er.id AS record_id, er.transaction_id, er.deduct_amount, er.business_pct,
+             er.hmrc_category, t.merchant_name, t.description, t.amount, t.transaction_date
+      FROM expense_records er
+      JOIN transactions t ON t.id = er.transaction_id
+      WHERE er.user_id = $1 AND er.tax_year = $2 AND er.confirmed = true
+      ORDER BY t.transaction_date DESC
+      LIMIT 100
+    `, [userId, taxYear]);
+
+    const countResult = await query(`
+      SELECT COUNT(*) AS total FROM expense_records
+      WHERE user_id = $1 AND tax_year = $2 AND confirmed = true
+    `, [userId, taxYear]);
+
+    const transactions = rows.map(r => ({
+      id:          r.transaction_id,
+      description: r.merchant_name || r.description || 'Expense',
+      amount:      Math.abs(parseFloat(r.amount)),
+      deductAmount: Math.abs(parseFloat(r.deduct_amount)),
+      businessPct: parseFloat(r.business_pct),
+      date:        r.transaction_date,
+      category:    r.hmrc_category,
+      confirmed:   true,
+    }));
+
+    res.json({ transactions, total: parseInt(countResult.rows[0].total) });
+  } catch (err) {
+    console.error('[CONFIRMED]', err.message);
+    res.status(500).json({ error: 'Failed to load confirmed transactions' });
+  }
+});
+
 // PATCH /transactions/:id/confirm — save user's expense decision
 router.patch('/:id/confirm', async (req, res) => {
   try {
@@ -209,6 +251,11 @@ router.patch('/:id/confirm', async (req, res) => {
         [id, userId]
       );
     }
+
+    try {
+      const { recalcTaxableProfit } = require('../engines/ede');
+      await recalcTaxableProfit(userId);
+    } catch (e) { console.error('[CONFIRM recalc]', e.message); }
 
     res.json({ success: true, id, confirmed });
   } catch (err) {
