@@ -450,9 +450,8 @@ router.post('/mileage', async (req, res) => {
       : req.body.miles ? [{ miles: req.body.miles, purpose: req.body.purpose, date: req.body.journey_date }]
       : [];
 
-    if (trips.length === 0) return res.status(400).json({ error: 'No trips provided.' });
-
-    // Clear existing trips for this tax year and re-insert all (full sync)
+    // Full sync: clear all existing trips, then re-insert whatever was sent.
+    // An empty array is valid — it means "remove all trips".
     await query(`DELETE FROM mileage_log WHERE user_id = $1 AND tax_year = $2`, [userId, taxYear]);
 
     for (const trip of trips) {
