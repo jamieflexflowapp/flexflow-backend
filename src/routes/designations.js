@@ -19,7 +19,7 @@ const router = express.Router();
 const db = require('../config/database');
 const { verifyToken: requireAuth } = require('../middleware/auth');
 
-const VALID_TYPES = ['spending', 'tax', 'pension', 'future_earnings'];
+const VALID_TYPES = ['spending', 'tax', 'pension', 'future_earnings', 'bills'];
 
 // ─── GET /designations ──────────────────────────────────────────────────────
 // Returns the current user's designations grouped by type.
@@ -35,7 +35,7 @@ router.get('/', requireAuth, async (req, res) => {
     );
 
     // Group by designation_type for easier consumption by the frontend.
-    const grouped = { spending: [], tax: [], pension: [], future_earnings: [] };
+    const grouped = { spending: [], tax: [], pension: [], future_earnings: [], bills: [] };
     for (const row of rows) {
       grouped[row.designation_type].push({
         bankAccountId: row.bank_account_id,
@@ -46,6 +46,7 @@ router.get('/', requireAuth, async (req, res) => {
       });
     }
 
+    console.log('[DESIG GET] returning:', JSON.stringify(Object.fromEntries(Object.entries(grouped).map(([k,v])=> [k, v.length]))));
     res.json({ designations: grouped, raw: rows });
   } catch (err) {
     console.error('GET /designations failed:', err);
@@ -63,6 +64,7 @@ router.get('/', requireAuth, async (req, res) => {
 // }
 router.post('/', requireAuth, async (req, res) => {
   const { designations } = req.body;
+  console.log('[DESIG POST] received:', JSON.stringify(designations?.slice(0,2)));
   if (!Array.isArray(designations)) {
     return res.status(400).json({ error: 'designations must be an array' });
   }
@@ -77,14 +79,6 @@ router.post('/', requireAuth, async (req, res) => {
         return res.status(400).json({ error: `Invalid designation type: ${t}` });
       }
     }
-  }
-
-  // At least one account must have 'spending' designation
-  const hasSpending = designations.some(d => d.types.includes('spending'));
-  if (!hasSpending) {
-    return res.status(400).json({
-      error: 'At least one account must be designated as spending',
-    });
   }
 
   try {

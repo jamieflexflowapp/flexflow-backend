@@ -51,7 +51,7 @@ router.get('/spending-transactions', verifyToken, checkOnboardingComplete, async
        JOIN account_designations ad
          ON ad.bank_account_id = bc.account_id AND ad.user_id = $1
        WHERE t.user_id = $1
-         AND ad.designation_type = 'spending'
+         AND ad.designation_type = 'bills'
          AND t.is_income = false
          AND t.transaction_date >= NOW() - INTERVAL '90 days'
          AND COALESCE(NULLIF(TRIM(t.merchant_name),''), NULLIF(TRIM(t.description),'')) IS NOT NULL
