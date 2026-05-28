@@ -242,11 +242,12 @@ router.post('/webhook', async (req, res) => {
 
 // ── GET /truelayer/accounts ───────────────────────────────────────────────────
 
-router.get('/accounts', verifyToken, checkOnboardingComplete, async (req, res) => {
+router.get('/accounts', verifyToken, async (req, res) => {
   try {
     const result = await query(
-      `SELECT id, provider, account_name, account_type, currency,
-              is_tax_account, tax_pot_balance, is_active, last_synced_at, sync_status
+      `SELECT id, account_id, provider, account_name, account_type, currency,
+              current_balance, is_tax_account, tax_pot_balance, is_active,
+              last_synced_at, sync_status
        FROM bank_connections WHERE user_id = $1 ORDER BY created_at ASC`,
       [req.user.userId]
     );
