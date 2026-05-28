@@ -129,7 +129,8 @@ async function calculateRunway(userId) {
   await fireRunwayAlerts(userId, runwayStatus, tpveStatus, runwayWeeks, taxPotShortfall);
 
   // FCA-compliant response — factual only, no directive language
-  const personalIncome = 0; // TODO: wire from income summary
+  const incomeRow = await query(`SELECT personal_income FROM users WHERE id = $1`, [userId]);
+  const personalIncome = parseFloat(incomeRow.rows[0]?.personal_income) || 0;
   return {
     // Available balance (tax pot excluded — Build Note 8)
     bank_balance:        Math.round(bankBalance * 100) / 100,
