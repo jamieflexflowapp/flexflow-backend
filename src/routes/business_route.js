@@ -34,8 +34,12 @@ router.get('/summary', async (req, res) => {
       [userId, fyStartStr]
     )).rows[0].t);
 
-    // Use tracked business expenses only (not raw debits which include transfers etc.)
-    const fytdExpenses = 0; // TODO: wire to expenses table when business expense tracking is built
+    // Single source of truth: total_deductions kept fresh by ede.recalcTaxableProfit
+    // (confirmed expenses + home office + mileage). Avoids divergent CT calcs.
+    const fytdExpenses = parseFloat((await query(
+      `SELECT COALESCE(total_deductions,0) AS t FROM users WHERE id=$1`,
+      [userId]
+    )).rows[0].t);
 
     // Director salary — full annual figure deducted (committed expense)
     const dirSalaryAnnual = parseFloat(u.director_salary_annual || 12570);
