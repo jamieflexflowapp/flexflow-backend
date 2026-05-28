@@ -35,9 +35,30 @@ router.use(verifyToken, checkOnboardingComplete);
 router.get('/summary', async (req, res) => {
   try {
     const result = await recalcTaxableProfit(req.user.userId);
+    const taxYear = getCurrentTaxYear();
+    const recs = await query(
+      `SELECT er.id, er.deduct_amount, er.hmrc_category, er.business_pct,
+              t.merchant_name, t.description, t.transaction_date
+       FROM expense_records er
+       LEFT JOIN transactions t ON t.id = er.transaction_id
+       WHERE er.user_id = $1 AND er.tax_year = $2 AND er.confirmed = true
+       ORDER BY t.transaction_date DESC`,
+      [req.user.userId, taxYear]
+    );
+    const items = recs.rows.map(r => ({
+      id: r.id,
+      name: r.merchant_name || r.description || 'Expense',
+      amount: Math.abs(parseFloat(r.deduct_amount)),
+      date: r.transaction_date,
+      category: r.hmrc_category,
+      subCategory: r.hmrc_category,
+    }));
     return res.json({
       ...result,
-      tax_year: getCurrentTaxYear(),
+      items,
+      itemCount: items.length,
+      totalThisYear: result.total_deductions,
+      tax_year: taxYear,
     });
   } catch (err) {
     console.error('Expenses summary error:', err);
