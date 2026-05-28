@@ -71,7 +71,7 @@ async function checkBankAccountLimit(req, res, next) {
   }
 }
 
-router.get('/connect', verifyToken, checkOnboardingComplete, checkBankAccountLimit, async (req, res) => {
+router.get('/connect', verifyToken, checkBankAccountLimit, async (req, res) => {
   const params = new URLSearchParams({
     response_type: 'code',
     client_id:     process.env.TRUELAYER_CLIENT_ID,
