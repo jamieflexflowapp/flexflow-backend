@@ -9,7 +9,7 @@ const { verifyToken, checkOnboardingComplete } = require('../middleware/auth');
 // Returns all active committed bills for the user
 router.get('/', verifyToken, checkOnboardingComplete, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user.userId;
     const result = await query(
       `SELECT id, name, amount, day_of_month, source, transaction_id, created_at
        FROM committed_bills
@@ -33,11 +33,51 @@ router.get('/', verifyToken, checkOnboardingComplete, async (req, res) => {
   }
 });
 
+// ── GET /committed-bills/spending-transactions ──────────────────────────────
+// Returns recent debit transactions from spending-designated accounts,
+// excluding any already saved as committed bills.
+router.get('/spending-transactions', verifyToken, checkOnboardingComplete, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const result = await query(
+      `SELECT DISTINCT ON (COALESCE(NULLIF(TRIM(t.merchant_name),''), NULLIF(TRIM(t.description),'')))
+         t.id, t.truelayer_id,
+         COALESCE(NULLIF(TRIM(t.merchant_name),''), NULLIF(TRIM(t.description),'')) AS name,
+         ABS(t.amount) AS amount,
+         t.transaction_date,
+         EXTRACT(DAY FROM t.transaction_date)::int AS day_of_month
+       FROM transactions t
+       JOIN bank_connections bc ON bc.id = t.bank_connection_id
+       JOIN account_designations ad
+         ON ad.bank_account_id = bc.account_id AND ad.user_id = $1
+       WHERE t.user_id = $1
+         AND ad.designation_type = 'spending'
+         AND t.is_income = false
+         AND t.transaction_date >= NOW() - INTERVAL '90 days'
+         AND COALESCE(NULLIF(TRIM(t.merchant_name),''), NULLIF(TRIM(t.description),'')) IS NOT NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM committed_bills cb
+           WHERE cb.user_id = $1
+             AND cb.is_active = true
+             AND (cb.transaction_id = t.truelayer_id
+               OR LOWER(cb.name) = LOWER(COALESCE(NULLIF(TRIM(t.merchant_name),''), NULLIF(TRIM(t.description),''))))
+         )
+       ORDER BY COALESCE(NULLIF(TRIM(t.merchant_name),''), NULLIF(TRIM(t.description),'')), t.transaction_date DESC
+       LIMIT 50`,
+      [userId]
+    );
+    res.json({ transactions: result.rows });
+  } catch (err) {
+    console.error('Spending transactions error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch spending transactions.' });
+  }
+});
+
 // ── POST /committed-bills ────────────────────────────────────────────────────
 // Add a new committed bill (manual or from transaction)
 router.post('/', verifyToken, checkOnboardingComplete, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user.userId;
     const { name, amount, day_of_month, source = 'manual', transaction_id } = req.body;
 
     if (!name || !amount) {
@@ -67,7 +107,7 @@ router.post('/', verifyToken, checkOnboardingComplete, async (req, res) => {
 // Soft-delete (deactivate) a committed bill
 router.delete('/:id', verifyToken, checkOnboardingComplete, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user.userId;
     const { id }  = req.params;
 
     const result = await query(
@@ -93,7 +133,7 @@ router.delete('/:id', verifyToken, checkOnboardingComplete, async (req, res) => 
 // Restore a previously removed bill
 router.put('/:id/restore', verifyToken, checkOnboardingComplete, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user.userId;
     const { id }  = req.params;
 
     const result = await query(
