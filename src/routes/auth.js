@@ -32,7 +32,7 @@ router.get('/me', verifyToken, async (req, res) => {
     const { query } = require('../config/database');
     const r = await query(
       `SELECT id, full_name, email, plan, income_structure, tax_code,
-              is_scottish_taxpayer, onboarding_complete, director_salary_annual,
+              is_scottish_taxpayer, onboarding_complete, onboarding_step, director_salary_annual,
               dividend_frequency, receives_pension
        FROM users WHERE id = $1`,
       [req.user.userId]
@@ -48,6 +48,7 @@ router.get('/me', verifyToken, async (req, res) => {
       tax_code:             u.tax_code || '1257L',
       is_scottish_taxpayer: !!u.is_scottish_taxpayer,
       onboarding_complete:  !!u.onboarding_complete,
+      onboarding_step:      u.onboarding_step,
       director_salary_annual: u.director_salary_annual,
       dividend_frequency:   u.dividend_frequency,
       receives_pension:     !!u.receives_pension,
