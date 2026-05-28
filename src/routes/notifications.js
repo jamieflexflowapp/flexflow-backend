@@ -24,8 +24,7 @@ router.get('/', async (req, res) => {
     const { type, unread_only } = req.query;
 
     let sql = `
-      SELECT id, alert_type, alert_subtype, title, body, is_read,
-             priority, metadata, created_at
+      SELECT id, alert_type, title, body, is_read, created_at
       FROM notifications
       WHERE user_id = $1
     `;

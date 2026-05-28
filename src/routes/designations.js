@@ -87,12 +87,11 @@ router.post('/', requireAuth, async (req, res) => {
     });
   }
 
-  const client = await db.getClient();
   try {
-    await client.query('BEGIN');
+    await db.query('BEGIN');
 
     // Clear existing designations for this user
-    await client.query(
+    await db.query(
       'DELETE FROM account_designations WHERE user_id = $1',
       [req.user.userId || req.user.id]
     );
@@ -100,7 +99,7 @@ router.post('/', requireAuth, async (req, res) => {
     // Insert new rows (one per account+type combo)
     for (const d of designations) {
       for (const type of d.types) {
-        await client.query(
+        await db.query(
           `INSERT INTO account_designations
              (user_id, bank_account_id, account_label, account_provider, designation_type)
            VALUES ($1, $2, $3, $4, $5)`,
@@ -110,14 +109,13 @@ router.post('/', requireAuth, async (req, res) => {
       }
     }
 
-    await client.query('COMMIT');
+    await db.query('COMMIT');
     res.json({ success: true, count: designations.length });
   } catch (err) {
-    await client.query('ROLLBACK');
+    await db.query('ROLLBACK');
     console.error('POST /designations failed:', err);
     res.status(500).json({ error: 'Could not save designations' });
   } finally {
-    client.release();
   }
 });
 
