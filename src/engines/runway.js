@@ -44,15 +44,12 @@ async function calculateRunway(userId) {
     [userId]
   );
 
-  // Get actual bank balance from most recent transactions
+  // Get spending account balance from designated accounts
   const balanceResult = await query(
-    `SELECT COALESCE(SUM(amount), 0) as net_balance
-     FROM transactions
-     WHERE user_id = $1
-       AND bank_connection_id IN (
-         SELECT id FROM bank_connections
-         WHERE user_id = $1 AND is_active = true AND is_tax_account = false
-       )`,
+    `SELECT COALESCE(SUM(bc.current_balance), 0) as net_balance
+     FROM bank_connections bc
+     JOIN account_designations ad ON ad.bank_account_id = bc.account_id AND ad.user_id = $1
+     WHERE bc.user_id = $1 AND bc.is_active = true AND ad.designation_type = 'spending'`,
     [userId]
   );
 
@@ -66,9 +63,9 @@ async function calculateRunway(userId) {
   // Step 2: Get Tier 1 committed outgoings total (monthly)
   // Build Note 3: denominator is Tier 1 ONLY — not all projected expenses
   const tier1Result = await query(
-    `SELECT COALESCE(SUM(monthly_equiv), 0) as tier1_monthly
-     FROM committed_outgoings
-     WHERE user_id = $1 AND is_tier1 = true AND is_active = true`,
+    `SELECT COALESCE(SUM(amount), 0) as tier1_monthly
+     FROM committed_bills
+     WHERE user_id = $1 AND is_active = true`,
     [userId]
   );
   const tier1Monthly = parseFloat(tier1Result.rows[0]?.tier1_monthly) || 0;
@@ -139,6 +136,7 @@ async function calculateRunway(userId) {
 
     // Runway
     tier1_monthly:       Math.round(tier1Monthly * 100) / 100,
+    weeklyOutgoings:     Math.round((tier1Monthly / 4.33) * 100) / 100,
     runway_weeks:        runwayWeeks,
     runway_status:       runwayStatus,
 
