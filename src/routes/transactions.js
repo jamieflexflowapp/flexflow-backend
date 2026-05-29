@@ -295,15 +295,40 @@ router.patch('/:id/confirm-income', async (req, res) => {
     const { confirmed } = req.body;
 
     if (confirmed === true) {
+      // Update transaction
       await query(
         `UPDATE transactions SET is_income = true, user_confirmed = true, dismissed_at = NULL
          WHERE id = $1 AND user_id = $2 AND transaction_type = 'CREDIT'`,
         [id, userId]
       );
+
+      // Get transaction details
+      const txn = (await query(
+        `SELECT amount, transaction_date FROM transactions WHERE id = $1 AND user_id = $2`,
+        [id, userId]
+      )).rows[0];
+
+      if (txn) {
+        const txDate = new Date(txn.transaction_date);
+        const taxYear = txDate >= new Date('2026-04-06') ? '2026/27' : '2025/26';
+
+        // Upsert into income_events
+        await query(
+          `INSERT INTO income_events (user_id, transaction_id, amount, gross_amount, income_date, income_type, tax_year, currency, is_cis, is_rental, included_in_smoothing)
+           VALUES ($1, $2, $3, $3, $4, 'se', $5, 'GBP', false, false, true)
+           ON CONFLICT (transaction_id) DO UPDATE SET gross_amount = EXCLUDED.gross_amount, updated_at = NOW()`,
+          [userId, id, parseFloat(txn.amount), txn.transaction_date, taxYear]
+        );
+      }
     } else {
+      // Unconfirm — update transaction and remove from income_events
       await query(
         `UPDATE transactions SET is_income = false, user_confirmed = false, dismissed_at = NOW()
          WHERE id = $1 AND user_id = $2 AND transaction_type = 'CREDIT'`,
+        [id, userId]
+      );
+      await query(
+        `DELETE FROM income_events WHERE transaction_id = $1 AND user_id = $2`,
         [id, userId]
       );
     }

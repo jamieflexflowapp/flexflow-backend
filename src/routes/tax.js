@@ -27,38 +27,39 @@ router.get('/liability', async (req, res) => {
   try {
     const taxYear = req.query.tax_year || '2026/27';
 
-    const cached = await query(
-      `SELECT * FROM tax_calculations
-       WHERE user_id = $1 AND tax_year = $2`,
-      [req.user.userId, taxYear]
-    );
+    // Always recalculate fresh so data reflects latest confirmed transactions
+    const r = await calculateTaxLiability(req.user.userId, taxYear);
 
-    if (cached.rows.length === 0) {
-      // Never calculated — run now
-      const result = await calculateTaxLiability(req.user.userId, taxYear);
-      return res.json(result);
-    }
-
-    const r = cached.rows[0];
     return res.json({
-      tax_year:         r.tax_year,
-      is_scottish:      r.is_scottish,
-      gross_paye:       parseFloat(r.gross_paye_income)        || 0,
-      gross_se:         parseFloat(r.gross_se_income)          || 0,
-      gross_dividends:  parseFloat(r.gross_dividend_income)    || 0,
-      gross_rental:     parseFloat(r.gross_rental_income)      || 0,
-      partner_share:    parseFloat(r.gross_partnership_income) || 0,
-      effective_pa:     parseFloat(r.effective_pa)             || 0,
-      pa_tapered:       r.pa_tapered,
-      it_total:         parseFloat(r.it_total)                 || 0,
-      ni_class2:        parseFloat(r.ni_class2)                || 0,
-      ni_class4:        parseFloat(r.ni_class4_main)           || 0,
-      ni_total:         parseFloat(r.ni_total)                 || 0,
-      s24_credit:       parseFloat(r.section24_credit)         || 0,
-      total_liability:  parseFloat(r.total_tax_liability)      || 0,
-      monthly_tax_pot:  parseFloat(r.monthly_tax_pot_contrib)  || 0,
-      mtd_required:     r.mtd_required,
-      calculated_at:    r.calculated_at,
+      // Original field names
+      taxYear:          r.tax_year,
+      isScottish:       r.is_scottish,
+      grossPaye:        r.gross_paye        || 0,
+      grossSe:          r.gross_se          || 0,
+      grossDividends:   r.gross_dividends   || 0,
+      grossRental:      r.gross_rental      || 0,
+      partnerShare:     r.partner_share     || 0,
+      effectivePa:      r.effective_pa      || 0,
+      paTapered:        r.pa_tapered        || false,
+      itTotal:          r.it_total          || 0,
+      niClass2:         r.ni_class2         || 0,
+      niClass4:         r.ni_class4         || 0,
+      niTotal:          r.ni_total          || 0,
+      s24Credit:        r.s24_credit        || 0,
+      totalLiability:   r.total_liability   || 0,
+      monthlyTaxPot:    r.monthly_tax_pot   || 0,
+      mtdRequired:      r.mtd_required      || false,
+      calculatedAt:     r.calculated_at,
+      // camelCase aliases expected by frontend TaxScreen
+      grossIncomeYtd:              (r.gross_se || 0) + (r.gross_paye || 0),
+      taxableProfit:               r.gross_se          || 0,
+      incomeTaxDue:                r.it_total          || 0,
+      class4NiDue:                 r.ni_class4         || 0,
+      class2NiDue:                 r.ni_class2         || 0,
+      totalTaxDue:                 r.total_liability   || 0,
+      effectivePersonalAllowance:  r.effective_pa      || 0,
+      taxCode:                     r.tax_code          || '1257L',
+      pensionReliefAmount:         r.pension?.income_tax_saving || 0,
     });
 
   } catch (err) {
