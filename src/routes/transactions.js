@@ -9,21 +9,23 @@ router.use(verifyToken);
 router.get('/auto-confirmed', async (req, res) => {
   try {
     const userId = req.user.userId;
+    console.log('[AUTO-CONFIRMED] userId:', userId);
     const now = new Date();
     const fyYear = (now.getMonth() > 3 || (now.getMonth() === 3 && now.getDate() >= 6))
       ? now.getFullYear() : now.getFullYear() - 1;
     const fyStartStr = `${fyYear}-04-06`;
+    console.log('[AUTO-CONFIRMED] fyStart:', fyStartStr);
 
     const page = parseInt(req.query.page || '1');
     const limit = 50;
     const offset = (page - 1) * limit;
 
     const { rows } = await query(`
-      SELECT id, description, merchant_name, amount, transaction_date,
+      SELECT transactions.id, description, merchant_name, amount, transaction_date,
              category, sub_category, transaction_type
       FROM transactions
       JOIN account_designations ad
-        ON ad.bank_account_id = transactions.bank_account_id
+        ON ad.bank_account_id = (SELECT account_id FROM bank_connections WHERE id = transactions.bank_connection_id)
         AND ad.user_id = $1
         AND ad.designation_type = 'future_earnings'
       WHERE transactions.user_id = $1
@@ -37,7 +39,7 @@ router.get('/auto-confirmed', async (req, res) => {
 
     const totalResult = await query(`
       SELECT COUNT(*) as total FROM transactions
-      JOIN account_designations ad ON ad.bank_account_id = transactions.bank_account_id
+      JOIN account_designations ad ON ad.bank_account_id = (SELECT account_id FROM bank_connections WHERE id = transactions.bank_connection_id)
         AND ad.user_id = $1 AND ad.designation_type = 'future_earnings'
       WHERE transactions.user_id = $1 AND transaction_type = 'DEBIT'
         AND transaction_date >= $2 AND category != 'transfer'
@@ -45,7 +47,7 @@ router.get('/auto-confirmed', async (req, res) => {
 
     const reviewedResult = await query(`
       SELECT COUNT(*) as reviewed FROM transactions
-      JOIN account_designations ad ON ad.bank_account_id = transactions.bank_account_id
+      JOIN account_designations ad ON ad.bank_account_id = (SELECT account_id FROM bank_connections WHERE id = transactions.bank_connection_id)
         AND ad.user_id = $1 AND ad.designation_type = 'future_earnings'
       WHERE transactions.user_id = $1 AND transaction_type = 'DEBIT'
         AND transaction_date >= $2 AND category != 'transfer'
@@ -84,11 +86,11 @@ router.get('/pending-review', async (req, res) => {
     const fyStartStr = `${fyYear}-04-06`;
 
     const { rows } = await query(`
-      SELECT id, description, merchant_name, amount, transaction_date,
+      SELECT transactions.id, description, merchant_name, amount, transaction_date,
              category, sub_category, transaction_type, is_income
       FROM transactions
       JOIN account_designations ad
-        ON ad.bank_account_id = transactions.bank_account_id
+        ON ad.bank_account_id = (SELECT account_id FROM bank_connections WHERE id = transactions.bank_connection_id)
         AND ad.user_id = $1
         AND ad.designation_type = 'future_earnings'
       WHERE transactions.user_id = $1

@@ -53,6 +53,7 @@ router.get('/spending-transactions', verifyToken, checkOnboardingComplete, async
        WHERE t.user_id = $1
          AND ad.designation_type = 'bills'
          AND t.is_income = false
+         AND t.transaction_type = 'DEBIT'
          AND t.transaction_date >= NOW() - INTERVAL '90 days'
          AND COALESCE(NULLIF(TRIM(t.merchant_name),''), NULLIF(TRIM(t.description),'')) IS NOT NULL
          AND NOT EXISTS (
