@@ -138,7 +138,7 @@ router.post('/profile', async (req, res) => {
       addField('tax_code_updated_at',   new Date().toISOString());
     }
     if (director_salary_annual !== undefined) {
-      addField('director_salary_annual', parseFloat(director_salary_annual) || 12570);
+      addField('director_salary_annual', director_salary_annual != null ? parseFloat(director_salary_annual) : 12570);
     }
     if (dividend_frequency) {
       addField('dividend_frequency',     dividend_frequency);
