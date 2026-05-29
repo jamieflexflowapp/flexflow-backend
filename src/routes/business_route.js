@@ -171,11 +171,11 @@ router.get('/salary-breakdown', async (req, res) => {
     let incomeTax = 0;
     let bands = [];
     if (isScottish) {
-      const starterTop = sco.starter_band_top - pa;
-      const basicTop   = sco.basic_band_top - pa;
-      const intTop     = sco.intermediate_band_top - pa;
-      const higherTop  = sco.higher_band_top - pa;
-      const advTop     = sco.advanced_band_top - pa;
+      const starterTop = sco.starter_band_top - personalAllowance;
+      const basicTop   = sco.basic_band_top - personalAllowance;
+      const intTop     = sco.intermediate_band_top - personalAllowance;
+      const higherTop  = sco.higher_band_top - personalAllowance;
+      const advTop     = sco.advanced_band_top - personalAllowance;
       const starter = Math.max(0, Math.min(salaryTaxable, starterTop));
       const basic   = Math.max(0, Math.min(salaryTaxable - starterTop, sco.basic_band_top - sco.starter_band_top));
       const inter   = Math.max(0, Math.min(salaryTaxable - basicTop,   sco.intermediate_band_top - sco.basic_band_top));
@@ -197,7 +197,7 @@ router.get('/salary-breakdown', async (req, res) => {
       ];
     } else {
       const basicTop   = uk.basic_rate_band_top || 37700;
-      const higherTop  = (uk.higher_rate_threshold || 125140) - pa;
+      const higherTop  = (uk.higher_rate_threshold || 125140) - personalAllowance;
       const basicBand  = Math.max(0, Math.min(salaryTaxable, basicTop));
       const higherBand = Math.max(0, Math.min(salaryTaxable - basicTop, higherTop - basicTop));
       const addlBand   = Math.max(0, salaryTaxable - higherTop);
