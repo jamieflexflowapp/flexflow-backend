@@ -122,8 +122,8 @@ async function calculateRunway(userId) {
   // Step 7: Update TPVE in tax_verification table
   await updateTPVE(userId, tpveStatus, taxPotBalance, taxPotTarget, taxPotShortfall, taxPotCoverage);
 
-  // Step 8: Fire alerts if needed
-  await fireRunwayAlerts(userId, runwayStatus, tpveStatus, runwayWeeks, taxPotShortfall);
+  // Step 8: Fire alerts if needed (non-fatal)
+  try { await fireRunwayAlerts(userId, runwayStatus, tpveStatus, runwayWeeks, taxPotShortfall); } catch (e) { console.warn('[RUNWAY] Alert firing skipped:', e.message); }
 
   // FCA-compliant response — factual only, no directive language
   const incomeRow = await query(`SELECT personal_income FROM users WHERE id = $1`, [userId]);
