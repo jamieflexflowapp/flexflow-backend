@@ -287,6 +287,34 @@ router.patch('/:id/confirm', async (req, res) => {
   }
 });
 
+// PATCH /transactions/:id/confirm-income — mark a CREDIT transaction as confirmed income
+router.patch('/:id/confirm-income', async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { id } = req.params;
+    const { confirmed } = req.body;
+
+    if (confirmed === true) {
+      await query(
+        `UPDATE transactions SET is_income = true, user_confirmed = true, dismissed_at = NULL
+         WHERE id = $1 AND user_id = $2 AND transaction_type = 'CREDIT'`,
+        [id, userId]
+      );
+    } else {
+      await query(
+        `UPDATE transactions SET is_income = false, user_confirmed = false, dismissed_at = NOW()
+         WHERE id = $1 AND user_id = $2 AND transaction_type = 'CREDIT'`,
+        [id, userId]
+      );
+    }
+
+    res.json({ success: true, id, confirmed });
+  } catch (err) {
+    console.error('[CONFIRM-INCOME]', err.message);
+    res.status(500).json({ error: 'Failed to confirm income transaction' });
+  }
+});
+
 // PATCH /transactions/:id/restore — reset a confirmed or dismissed transaction back to pending
 router.patch('/:id/restore', async (req, res) => {
   try {
