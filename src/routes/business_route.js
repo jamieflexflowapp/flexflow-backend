@@ -158,6 +158,12 @@ router.get('/salary-breakdown', async (req, res) => {
       const n = parseInt(stripped);
       personalAllowance = isNaN(n) ? pa : n * 10;
     }
+    // PA taper: reduces by £1 for every £2 above £100,000, gone at £125,140
+    const paTaperStart = uk.pa_taper_start || 100000;
+    if (salary > paTaperStart) {
+      const taper = Math.floor((salary - paTaperStart) / 2);
+      personalAllowance = Math.max(0, personalAllowance - taper);
+    }
     personalAllowance = Math.max(0, personalAllowance);
     const salaryTaxable = Math.max(0, salary - personalAllowance);
 
