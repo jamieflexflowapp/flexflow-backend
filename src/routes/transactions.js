@@ -231,13 +231,13 @@ router.patch('/:id/confirm', async (req, res) => {
     );
 
     if (confirmed === true) {
-      // Fetch transaction details
+      // Fetch transaction details — only write to expense_records for DEBIT transactions
       const txn = (await query(
-        `SELECT description, merchant_name, amount, transaction_date, category FROM transactions WHERE id = $1`,
+        `SELECT description, merchant_name, amount, transaction_date, category, transaction_type FROM transactions WHERE id = $1`,
         [id]
       )).rows[0];
 
-      if (txn) {
+      if (txn && txn.transaction_type === 'DEBIT') {
         const now = new Date();
         const fyYear = (now.getMonth() > 3 || (now.getMonth() === 3 && now.getDate() >= 6))
           ? now.getFullYear() : now.getFullYear() - 1;
@@ -261,12 +261,18 @@ router.patch('/:id/confirm', async (req, res) => {
           deductAmount
         ]);
       }
-    } else {
-      // Remove from expense_records if rejected
-      await query(
-        `DELETE FROM expense_records WHERE transaction_id = $1 AND user_id = $2`,
-        [id, userId]
-      );
+    } else if (confirmed === false) {
+      // Only remove from expense_records for DEBIT transactions
+      const txn = (await query(
+        `SELECT transaction_type FROM transactions WHERE id = $1`,
+        [id]
+      )).rows[0];
+      if (txn && txn.transaction_type === 'DEBIT') {
+        await query(
+          `DELETE FROM expense_records WHERE transaction_id = $1 AND user_id = $2`,
+          [id, userId]
+        );
+      }
     }
 
     try {
