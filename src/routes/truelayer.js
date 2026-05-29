@@ -660,32 +660,50 @@ router.get('/balances', verifyToken, async (req, res) => {
     // An account can have multiple designations (many-to-many)
     // Priority: designation table first, is_tax_account fallback
 
-    let spendingBalance = 0;
-    let taxPotBalance   = 0;
-    let hasSpending     = false;
-    let hasTax          = false;
+    let spendingBalance        = 0;
+    let taxPotBalance          = 0;
+    let futureEarningsBalance  = 0;
+    let pensionBalance         = 0;
+    let billsBalance           = 0;
+    let hasSpending            = false;
+    let hasTax                 = false;
+    let hasFutureEarnings      = false;
+    let hasPension             = false;
+    let hasBills               = false;
 
     for (const acc of accountBalances) {
       const desigs = acc.designations || [];
 
       // Use designation table if populated, else fall back to is_tax_account flag
-      const isSpending = desigs.includes('spending');
-      const isTax      = desigs.includes('tax') || (desigs.length === 0 && acc.is_tax_account);
+      const isSpending       = desigs.includes('spending');
+      const isTax            = desigs.includes('tax') || (desigs.length === 0 && acc.is_tax_account);
+      const isFutureEarnings = desigs.includes('future_earnings');
+      const isPension        = desigs.includes('pension');
+      const isBills          = desigs.includes('bills');
 
-      if (isSpending) { spendingBalance += acc.balance; hasSpending = true; }
-      if (isTax)      { taxPotBalance   += acc.balance; hasTax      = true; }
+      if (isSpending)       { spendingBalance       += acc.balance; hasSpending       = true; }
+      if (isTax)            { taxPotBalance         += acc.balance; hasTax            = true; }
+      if (isFutureEarnings) { futureEarningsBalance += acc.balance; hasFutureEarnings = true; }
+      if (isPension)        { pensionBalance        += acc.balance; hasPension        = true; }
+      if (isBills)          { billsBalance          += acc.balance; hasBills          = true; }
     }
 
     // Round to 2dp
-    spendingBalance = Math.round(spendingBalance * 100) / 100;
-    taxPotBalance   = Math.round(taxPotBalance   * 100) / 100;
+    spendingBalance       = Math.round(spendingBalance       * 100) / 100;
+    taxPotBalance         = Math.round(taxPotBalance         * 100) / 100;
+    futureEarningsBalance = Math.round(futureEarningsBalance * 100) / 100;
+    pensionBalance        = Math.round(pensionBalance        * 100) / 100;
+    billsBalance          = Math.round(billsBalance          * 100) / 100;
 
     return res.json({
-      connected:       true,
-      spendingBalance: hasSpending ? spendingBalance : null,
-      taxPotBalance:   hasTax      ? taxPotBalance   : null,
-      accounts:        accountBalances,
-      fetched_at:      new Date().toISOString(),
+      connected:             true,
+      spendingBalance:       hasSpending       ? spendingBalance       : null,
+      taxPotBalance:         hasTax            ? taxPotBalance         : null,
+      futureEarningsBalance: hasFutureEarnings ? futureEarningsBalance : null,
+      pensionBalance:        hasPension        ? pensionBalance        : null,
+      billsBalance:          hasBills          ? billsBalance          : null,
+      accounts:              accountBalances,
+      fetched_at:            new Date().toISOString(),
     });
 
   } catch (err) {

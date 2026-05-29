@@ -22,7 +22,11 @@ router.get('/auto-confirmed', async (req, res) => {
       SELECT id, description, merchant_name, amount, transaction_date,
              category, sub_category, transaction_type
       FROM transactions
-      WHERE user_id = $1
+      JOIN account_designations ad
+        ON ad.bank_account_id = transactions.bank_account_id
+        AND ad.user_id = $1
+        AND ad.designation_type = 'future_earnings'
+      WHERE transactions.user_id = $1
         AND transaction_type = 'DEBIT'
         AND transaction_date >= $2
         AND category != 'transfer'
@@ -33,13 +37,17 @@ router.get('/auto-confirmed', async (req, res) => {
 
     const totalResult = await query(`
       SELECT COUNT(*) as total FROM transactions
-      WHERE user_id = $1 AND transaction_type = 'DEBIT'
+      JOIN account_designations ad ON ad.bank_account_id = transactions.bank_account_id
+        AND ad.user_id = $1 AND ad.designation_type = 'future_earnings'
+      WHERE transactions.user_id = $1 AND transaction_type = 'DEBIT'
         AND transaction_date >= $2 AND category != 'transfer'
     `, [userId, fyStartStr]);
 
     const reviewedResult = await query(`
       SELECT COUNT(*) as reviewed FROM transactions
-      WHERE user_id = $1 AND transaction_type = 'DEBIT'
+      JOIN account_designations ad ON ad.bank_account_id = transactions.bank_account_id
+        AND ad.user_id = $1 AND ad.designation_type = 'future_earnings'
+      WHERE transactions.user_id = $1 AND transaction_type = 'DEBIT'
         AND transaction_date >= $2 AND category != 'transfer'
         AND user_confirmed IS NOT NULL
     `, [userId, fyStartStr]);
@@ -79,7 +87,11 @@ router.get('/pending-review', async (req, res) => {
       SELECT id, description, merchant_name, amount, transaction_date,
              category, sub_category, transaction_type, is_income
       FROM transactions
-      WHERE user_id = $1
+      JOIN account_designations ad
+        ON ad.bank_account_id = transactions.bank_account_id
+        AND ad.user_id = $1
+        AND ad.designation_type = 'future_earnings'
+      WHERE transactions.user_id = $1
         AND transaction_type = 'CREDIT'
         AND transaction_date >= $2
         AND category != 'transfer'
