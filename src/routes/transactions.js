@@ -287,6 +287,35 @@ router.patch('/:id/confirm', async (req, res) => {
   }
 });
 
+// PATCH /transactions/:id/restore — reset a confirmed or dismissed transaction back to pending
+router.patch('/:id/restore', async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { id } = req.params;
+
+    await query(
+      `UPDATE transactions SET user_confirmed = NULL, dismissed_at = NULL
+       WHERE id = $1 AND user_id = $2`,
+      [id, userId]
+    );
+
+    await query(
+      `DELETE FROM expense_records WHERE transaction_id = $1 AND user_id = $2`,
+      [id, userId]
+    );
+
+    try {
+      const { recalcTaxableProfit } = require('../engines/ede');
+      await recalcTaxableProfit(userId);
+    } catch (e) { console.error('[RESTORE recalc]', e.message); }
+
+    res.json({ success: true, id });
+  } catch (err) {
+    console.error('[RESTORE]', err.message);
+    res.status(500).json({ error: 'Failed to restore transaction' });
+  }
+});
+
 module.exports = router;
 
 // GET /transactions/income-review — credit transactions for income review (pending + confirmed + dismissed)
