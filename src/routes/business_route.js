@@ -196,9 +196,11 @@ router.get('/salary-breakdown', async (req, res) => {
         { label: 'Top rate', range: `Above £${sco.advanced_band_top.toLocaleString()}`, rate: '48%', active: salary > sco.advanced_band_top },
       ];
     } else {
-      const basicBand  = Math.max(0, Math.min(salaryTaxable, uk.basic_rate_band_top || 37700));
-      const higherBand = Math.max(0, Math.min(salaryTaxable - (uk.basic_rate_band_top || 37700), (uk.higher_rate_threshold || 125140) - (uk.basic_rate_threshold || 50270)));
-      const addlBand   = Math.max(0, salaryTaxable - ((uk.higher_rate_threshold || 125140) - pa));
+      const basicTop   = uk.basic_rate_band_top || 37700;
+      const higherTop  = (uk.higher_rate_threshold || 125140) - pa;
+      const basicBand  = Math.max(0, Math.min(salaryTaxable, basicTop));
+      const higherBand = Math.max(0, Math.min(salaryTaxable - basicTop, higherTop - basicTop));
+      const addlBand   = Math.max(0, salaryTaxable - higherTop);
       incomeTax = Math.round((basicBand * uk.basic_rate + higherBand * uk.higher_rate + addlBand * uk.additional_rate) * 100) / 100;
       bands = [
         { label: 'Tax-free (Personal Allowance)', range: `Up to £${pa.toLocaleString()}`, rate: '0%', active: salary <= personalAllowance },
