@@ -218,13 +218,16 @@ router.patch('/:id/confirm', async (req, res) => {
     const { id } = req.params;
     const { confirmed, businessPct = 100 } = req.body;
 
-    // Save decision on transaction
+    // Save decision on transaction — also update all duplicates (same description/amount/date)
     await query(
       `UPDATE transactions
          SET user_confirmed = $1,
              dismissed_at = CASE WHEN $1 = false THEN NOW() ELSE NULL END
-       WHERE id = $2 AND user_id = $3`,
-      [confirmed, id, userId]
+       WHERE user_id = $2
+         AND description = (SELECT description FROM transactions WHERE id = $3)
+         AND amount = (SELECT amount FROM transactions WHERE id = $3)
+         AND transaction_date = (SELECT transaction_date FROM transactions WHERE id = $3)`,
+      [confirmed, userId, id]
     );
 
     if (confirmed === true) {
@@ -279,3 +282,44 @@ router.patch('/:id/confirm', async (req, res) => {
 });
 
 module.exports = router;
+
+// GET /transactions/income-review — credit transactions for income review (pending + confirmed + dismissed)
+router.get('/income-review', async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const now = new Date();
+    const fyYear = (now.getMonth() > 3 || (now.getMonth() === 3 && now.getDate() >= 6))
+      ? now.getFullYear() : now.getFullYear() - 1;
+    const fyStartStr = `${fyYear}-04-06`;
+
+    const { rows } = await query(`
+      SELECT DISTINCT ON (description, amount, transaction_date) 
+             transactions.id, description, merchant_name, amount, transaction_date,
+             category, user_confirmed
+      FROM transactions
+      JOIN account_designations ad
+        ON ad.bank_account_id = (SELECT account_id FROM bank_connections WHERE id = transactions.bank_connection_id)
+        AND ad.user_id = $1
+        AND ad.designation_type = 'future_earnings'
+      WHERE transactions.user_id = $1
+        AND transaction_type = 'CREDIT'
+        AND transaction_date >= $2
+        AND category != 'transfer'
+      ORDER BY description, amount, transaction_date, transactions.id
+      LIMIT 100
+    `, [userId, fyStartStr]);
+
+    const transactions = rows.map(r => ({
+      id:          r.id,
+      description: r.description || r.merchant_name || 'Unknown',
+      amount:      Math.abs(parseFloat(r.amount)),
+      date:        r.transaction_date,
+      confirmed:   r.user_confirmed === true ? true : r.user_confirmed === false ? false : null,
+    }));
+
+    res.json({ transactions });
+  } catch (err) {
+    console.error('[TRANSACTIONS]', err.message);
+    res.status(500).json({ error: 'Failed to load income review transactions' });
+  }
+});

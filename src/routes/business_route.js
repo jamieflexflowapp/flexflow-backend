@@ -47,8 +47,13 @@ router.get('/summary', async (req, res) => {
     const salaryPaidYTD = Math.round(dirSalaryMonthly * monthsElapsed * 100) / 100;
     const salaryRemaining = Math.round(dirSalaryMonthly * monthsRemaining * 100) / 100;
 
-    // Taxable profit = Turnover − Expenses − Full Annual Salary
-    const ctTaxableProfit = Math.max(0, Math.round((fytdTurnover - fytdExpenses - dirSalaryAnnual) * 100) / 100);
+    // Employer NI — 15% above £5,000 secondary threshold (2025/26), sole director = no Employment Allowance
+    const EMPLOYER_NI_RATE = 0.15;
+    const EMPLOYER_NI_THRESHOLD = 5000;
+    const employerNI = Math.round(Math.max(0, dirSalaryAnnual - EMPLOYER_NI_THRESHOLD) * EMPLOYER_NI_RATE * 100) / 100;
+
+    // Taxable profit = Turnover − Expenses − Full Annual Salary − Employer NI
+    const ctTaxableProfit = Math.max(0, Math.round((fytdTurnover - fytdExpenses - dirSalaryAnnual - employerNI) * 100) / 100);
 
     // Corporation Tax (2026/27 rates)
     let corpTaxReserve = 0;
@@ -88,6 +93,9 @@ router.get('/summary', async (req, res) => {
       fytdTurnover,
       fytdExpenses,
       directorSalaryAnnual: dirSalaryAnnual,
+      employerNI,
+      employerNIRate: EMPLOYER_NI_RATE,
+      employerNIThreshold: EMPLOYER_NI_THRESHOLD,
       directorSalaryMonthly: dirSalaryMonthly,
       salaryPaidYtd: salaryPaidYTD,
       salaryRemaining,

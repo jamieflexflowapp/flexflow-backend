@@ -44,6 +44,28 @@ router.get('/personal', async (req, res) => {
 
     // Return cached result with metadata
     const grossAvg = parseFloat(user.gross_avg_monthly_se) || 0;
+
+    // Live FYTD total from confirmed income transactions
+    const now = new Date();
+    const fyYear = (now.getMonth() > 3 || (now.getMonth() === 3 && now.getDate() >= 6)) ? now.getFullYear() : now.getFullYear() - 1;
+    const fyStart = `${fyYear}-04-06`;
+    const confirmedResult = await query(`
+      SELECT COALESCE(SUM(amount), 0) as total FROM (
+        SELECT DISTINCT ON (description, amount, transaction_date) ABS(t.amount) as amount
+        FROM transactions t
+        JOIN account_designations ad
+          ON ad.bank_account_id = (SELECT account_id FROM bank_connections WHERE id = t.bank_connection_id)
+          AND ad.user_id = $1
+          AND ad.designation_type = 'future_earnings'
+        WHERE t.user_id = $1
+          AND t.transaction_type = 'CREDIT'
+          AND t.transaction_date >= $2
+          AND t.user_confirmed = true
+        ORDER BY description, amount, transaction_date, t.id
+      ) deduped
+    `, [req.user.userId, fyStart]);
+    const confirmedFytdTotal = parseFloat(confirmedResult.rows[0]?.total) || 0;
+
     return res.json({
       personal_income:        parseFloat(user.personal_income) || 0,
       personalIncome:         parseFloat(user.personal_income) || 0,
@@ -53,6 +75,7 @@ router.get('/personal', async (req, res) => {
       gross_avg_monthly_se:   grossAvg,
       grossAvgMonthlySe:      grossAvg,
       fytdTotal:              grossAvg * (user.months_of_data || 0),
+      confirmedFytdTotal:     confirmedFytdTotal,
       reserve_amount:         parseFloat(user.reserve_amount) || 0,
       monthly_tax_allocation: parseFloat(user.tax_pot_target) || 0,
       monthlyTaxAllocation:   parseFloat(user.tax_pot_target) || 0,
