@@ -50,19 +50,13 @@ router.get('/personal', async (req, res) => {
     const fyYear = (now.getMonth() > 3 || (now.getMonth() === 3 && now.getDate() >= 6)) ? now.getFullYear() : now.getFullYear() - 1;
     const fyStart = `${fyYear}-04-06`;
     const confirmedResult = await query(`
-      SELECT COALESCE(SUM(amount), 0) as total FROM (
-        SELECT DISTINCT ON (description, amount, transaction_date) ABS(t.amount) as amount
-        FROM transactions t
-        JOIN account_designations ad
-          ON ad.bank_account_id = (SELECT account_id FROM bank_connections WHERE id = t.bank_connection_id)
-          AND ad.user_id = $1
-          AND ad.designation_type = 'future_earnings'
-        WHERE t.user_id = $1
-          AND t.transaction_type = 'CREDIT'
-          AND t.transaction_date >= $2
-          AND t.user_confirmed = true
-        ORDER BY description, amount, transaction_date, t.id
-      ) deduped
+      SELECT COALESCE(SUM(amount), 0) as total
+      FROM transactions
+      WHERE user_id = $1
+        AND transaction_type = 'CREDIT'
+        AND transaction_date >= $2
+        AND is_income = true
+        AND user_confirmed = true
     `, [req.user.userId, fyStart]);
     const confirmedFytdTotal = parseFloat(confirmedResult.rows[0]?.total) || 0;
 

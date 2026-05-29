@@ -347,13 +347,18 @@ router.patch('/:id/restore', async (req, res) => {
     const { id } = req.params;
 
     await query(
-      `UPDATE transactions SET user_confirmed = NULL, dismissed_at = NULL
+      `UPDATE transactions SET user_confirmed = NULL, dismissed_at = NULL, is_income = false
        WHERE id = $1 AND user_id = $2`,
       [id, userId]
     );
 
     await query(
       `DELETE FROM expense_records WHERE transaction_id = $1 AND user_id = $2`,
+      [id, userId]
+    );
+
+    await query(
+      `DELETE FROM income_events WHERE transaction_id = $1 AND user_id = $2`,
       [id, userId]
     );
 
