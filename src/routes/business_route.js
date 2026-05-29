@@ -42,7 +42,7 @@ router.get('/summary', async (req, res) => {
     )).rows[0].t);
 
     // Director salary — full annual figure deducted (committed expense)
-    const dirSalaryAnnual = parseFloat(u.director_salary_annual || 12570);
+    const dirSalaryAnnual = u.director_salary_annual != null ? parseFloat(u.director_salary_annual) : 12570;
     const dirSalaryMonthly = Math.round(dirSalaryAnnual / 12 * 100) / 100;
     const salaryPaidYTD = Math.round(dirSalaryMonthly * monthsElapsed * 100) / 100;
     const salaryRemaining = Math.round(dirSalaryMonthly * monthsRemaining * 100) / 100;
