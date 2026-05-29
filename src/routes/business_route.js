@@ -85,7 +85,7 @@ router.get('/summary', async (req, res) => {
 
     // Post-tax earnings
     const earningsPostTax = Math.round((availableForDividends - divTax) * 100) / 100;
-    const totalTaxOwed = Math.round((corpTaxReserve + divTax) * 100) / 100;
+    const totalTaxOwed = Math.round((corpTaxReserve + divTax + employerNI) * 100) / 100;
 
     const dividendsPaidYtd = 0;
 
