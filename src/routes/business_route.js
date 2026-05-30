@@ -171,17 +171,18 @@ router.get('/salary-breakdown', async (req, res) => {
     let incomeTax = 0;
     let bands = [];
     if (isScottish) {
-      const starterTop = sco.starter_band_top - personalAllowance;
-      const basicTop   = sco.basic_band_top - personalAllowance;
-      const intTop     = sco.intermediate_band_top - personalAllowance;
-      const higherTop  = sco.higher_band_top - personalAllowance;
-      const advTop     = sco.advanced_band_top - personalAllowance;
-      const starter = Math.max(0, Math.min(salaryTaxable, starterTop));
-      const basic   = Math.max(0, Math.min(salaryTaxable - starterTop, sco.basic_band_top - sco.starter_band_top));
-      const inter   = Math.max(0, Math.min(salaryTaxable - basicTop,   sco.intermediate_band_top - sco.basic_band_top));
-      const higher  = Math.max(0, Math.min(salaryTaxable - intTop,     sco.higher_band_top - sco.intermediate_band_top));
-      const adv     = Math.max(0, Math.min(salaryTaxable - higherTop,  sco.advanced_band_top - sco.higher_band_top));
-      const top     = Math.max(0, salaryTaxable - advTop);
+      // Fixed Scottish band SIZES — applied sequentially to taxable income
+      const starterSize  = sco.starter_band_top  - (sco.personal_allowance || 12570); // 3967
+      const basicSize    = sco.basic_band_top     - sco.starter_band_top;              // 12989
+      const interSize    = sco.intermediate_band_top - sco.basic_band_top;             // 14136
+      const higherSize   = sco.higher_band_top    - sco.intermediate_band_top;         // 31338
+      const advSize      = sco.advanced_band_top  - sco.higher_band_top;               // 50140
+      const starter = Math.max(0, Math.min(salaryTaxable, starterSize));
+      const basic   = Math.max(0, Math.min(salaryTaxable - starterSize, basicSize));
+      const inter   = Math.max(0, Math.min(salaryTaxable - starterSize - basicSize, interSize));
+      const higher  = Math.max(0, Math.min(salaryTaxable - starterSize - basicSize - interSize, higherSize));
+      const adv     = Math.max(0, Math.min(salaryTaxable - starterSize - basicSize - interSize - higherSize, advSize));
+      const top     = Math.max(0, salaryTaxable - starterSize - basicSize - interSize - higherSize - advSize);
       incomeTax = Math.round((
         starter * sco.starter_rate + basic * sco.basic_rate + inter * sco.intermediate_rate +
         higher * sco.higher_rate + adv * sco.advanced_rate + top * sco.top_rate
@@ -196,11 +197,11 @@ router.get('/salary-breakdown', async (req, res) => {
         { label: 'Top rate', range: `Above £${sco.advanced_band_top.toLocaleString()}`, rate: '48%', active: salary > sco.advanced_band_top },
       ];
     } else {
-      const basicTop   = uk.basic_rate_band_top || 37700;
-      const higherTop  = (uk.higher_rate_threshold || 125140) - personalAllowance;
-      const basicBand  = Math.max(0, Math.min(salaryTaxable, basicTop));
-      const higherBand = Math.max(0, Math.min(salaryTaxable - basicTop, higherTop - basicTop));
-      const addlBand   = Math.max(0, salaryTaxable - higherTop);
+      const basicBandSize  = (uk.basic_rate_threshold || 50270) - (uk.personal_allowance || 12570); // 37700 — fixed
+      const higherBandSize = (uk.higher_rate_threshold || 125140) - (uk.basic_rate_threshold || 50270); // 74870 — fixed
+      const basicBand  = Math.max(0, Math.min(salaryTaxable, basicBandSize));
+      const higherBand = Math.max(0, Math.min(salaryTaxable - basicBandSize, higherBandSize));
+      const addlBand   = Math.max(0, salaryTaxable - basicBandSize - higherBandSize);
       incomeTax = Math.round((basicBand * uk.basic_rate + higherBand * uk.higher_rate + addlBand * uk.additional_rate) * 100) / 100;
       bands = [
         { label: 'Tax-free (Personal Allowance)', range: `Up to £${pa.toLocaleString()}`, rate: '0%', active: salary <= personalAllowance },
