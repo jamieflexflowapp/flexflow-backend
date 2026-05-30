@@ -431,4 +431,82 @@ async function logout(req, res) {
   }
 }
 
-module.exports = { register, verifyEmail, resendVerification, login, refresh, logout };
+// ── Forgot Password ──────────────────────────────────────────────────────────
+async function forgotPassword(req, res) {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email is required.' });
+
+    const { rows } = await query(
+      `SELECT id, full_name FROM users WHERE email = $1`,
+      [email.toLowerCase().trim()]
+    );
+
+    // Always return success — don't reveal if email exists
+    if (rows.length === 0) {
+      return res.json({ message: 'If that email exists, a reset code has been sent.' });
+    }
+
+    const user = rows[0];
+    const firstName = user.full_name?.split(' ')[0] || 'there';
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const expires = new Date(Date.now() + 15 * 60 * 1000);
+
+    await query(
+      `UPDATE users SET pw_reset_code = $1, pw_reset_expires = $2 WHERE id = $3`,
+      [code, expires, user.id]
+    );
+
+    const sg = require('../utils/sendgrid');
+    await sg.sendPasswordResetEmail(email.toLowerCase().trim(), firstName, code);
+
+    res.json({ message: 'If that email exists, a reset code has been sent.' });
+  } catch (err) {
+    console.error('[FORGOT-PASSWORD]', err.message);
+    res.status(500).json({ error: 'Failed to send reset email.' });
+  }
+}
+
+// ── Reset Password ────────────────────────────────────────────────────────────
+async function resetPassword(req, res) {
+  try {
+    const { email, code, password } = req.body;
+    if (!email || !code || !password) {
+      return res.status(400).json({ error: 'Email, code and new password are required.' });
+    }
+
+    const { rows } = await query(
+      `SELECT id, full_name, pw_reset_code, pw_reset_expires FROM users WHERE email = $1`,
+      [email.toLowerCase().trim()]
+    );
+
+    if (rows.length === 0) return res.status(400).json({ error: 'Invalid or expired code.' });
+
+    const user = rows[0];
+    if (!user.pw_reset_code || user.pw_reset_code !== code) {
+      return res.status(400).json({ error: 'Invalid or expired code.' });
+    }
+    if (new Date() > new Date(user.pw_reset_expires)) {
+      return res.status(400).json({ error: 'Reset code has expired. Please request a new one.' });
+    }
+
+    const firstName = user.full_name?.split(' ')[0] || '';
+    const lastName  = user.full_name?.split(' ').slice(1).join(' ') || '';
+    const pwError = validatePassword(password, firstName, lastName);
+    if (pwError) return res.status(400).json({ error: pwError });
+
+    const password_hash = await bcrypt.hash(password, 12);
+
+    await query(
+      `UPDATE users SET password_hash = $1, pw_reset_code = NULL, pw_reset_expires = NULL WHERE id = $2`,
+      [password_hash, user.id]
+    );
+
+    res.json({ message: 'Password reset successfully. You can now sign in.' });
+  } catch (err) {
+    console.error('[RESET-PASSWORD]', err.message);
+    res.status(500).json({ error: 'Failed to reset password.' });
+  }
+}
+
+module.exports = { register, verifyEmail, resendVerification, login, refresh, logout, forgotPassword, resetPassword };
