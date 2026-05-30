@@ -133,7 +133,7 @@ function calcScottishIncomeTax(taxableNonDivIncome, rates, bandExtension = 0) {
     { name: 'starter',      top: (rates.starter_band_top      || 16537)  - pa,                            rate: rates.starter_rate      || 0.19 },
     { name: 'basic',        top: (rates.basic_band_top         || 43662)  - pa + bandExtension,            rate: rates.basic_rate         || 0.20 },
     { name: 'intermediate', top: (rates.intermediate_band_top  || 75000)  - pa + bandExtension,            rate: rates.intermediate_rate  || 0.21 },
-    { name: 'higher',       top: (rates.higher_rate_threshold  || 125140) - pa + bandExtension,            rate: rates.higher_rate        || 0.42 },
+    { name: 'higher',       top: (rates.higher_band_top         || 75000)  - pa + bandExtension,            rate: rates.higher_rate        || 0.42 },
     { name: 'advanced',     top: (rates.advanced_band_top      || 150000) - pa + bandExtension,            rate: rates.advanced_rate      || 0.45 },
     { name: 'top',          top: Infinity,                                                                  rate: rates.top_rate           || 0.48 },
   ];
