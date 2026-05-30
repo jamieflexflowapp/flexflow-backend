@@ -383,6 +383,14 @@ async function syncAccountTransactions(userId, accountId, accessToken) {
 
       const txnId = txnResult.rows[0].id;
 
+      // Auto-dismiss if TCE flagged it (e.g. returned DD — not income, not for review)
+      if (classification.auto_dismiss) {
+        await query(
+          `UPDATE transactions SET user_confirmed = false, dismissed_at = NOW() WHERE id = $1`,
+          [txnId]
+        );
+      }
+
       // If income — store in income_events with dual amount columns
       if (classification.is_income) {
         const taxYear = getTaxYear(new Date(normalised.transaction_date));

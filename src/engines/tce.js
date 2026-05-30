@@ -97,6 +97,12 @@ async function classifyTransaction(transaction, user, connectedAccountIds = []) 
     return { category: 'transfer', sub_category: 'internal_transfer', is_income: false };
   }
 
+  // ── BRANCH 1b: Returned DD / Failed Payment Detection ───────────────────
+  // Returned Direct Debits are credits but NOT income — auto-dismiss
+  if (isCredit && /returned dd|returned direct debit|unpaid dd|unpaid direct debit|recalled payment|reverse payment/i.test(descLower)) {
+    return { category: 'transfer', sub_category: 'returned_dd', is_income: false, auto_dismiss: true };
+  }
+
   // ── BRANCH 2: HMRC Payment Detection ────────────────────────────────────
   if (!isCredit) {
     const sortCode = (transaction.sort_code || '').replace(/-/g, '');
