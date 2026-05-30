@@ -208,51 +208,10 @@ async function updateTPVE(userId, status, balance, target, shortfall, coverage) 
 async function fireRunwayAlerts(userId, runwayStatus, tpveStatus, runwayWeeks, shortfall) {
   const alerts = [];
 
-  // Runway alerts
-  if (runwayStatus === 'RED') {
-    alerts.push({
-      type:     'RUNWAY_RED',
-      severity: 'RED',
-      title:    'Low runway',
-      body:     `Your available balance covers approximately ${runwayWeeks.toFixed(1)} weeks of committed outgoings.`,
-      dedup:    `RUNWAY_RED_${new Date().toISOString().split('T')[0]}`,
-    });
-  } else if (runwayStatus === 'AMBER') {
-    alerts.push({
-      type:     'RUNWAY_AMBER',
-      severity: 'AMBER',
-      title:    'Runway below committed outgoings',
-      body:     `Your estimated monthly income is below your committed outgoings. Available balance covers approximately ${runwayWeeks.toFixed(1)} weeks.`,
-      dedup:    `RUNWAY_AMBER_${new Date().toISOString().split('T')[0]}`,
-    });
-  }
+  // Runway alerts — disabled, keeping expenses + income review only
 
-  // TPVE alerts
-  if (tpveStatus === 'TPVE_RED') {
-    alerts.push({
-      type:     'TPVE_RED',
-      severity: 'RED',
-      title:    'Tax pot below target',
-      body:     `Your tax pot is £${shortfall.toFixed(2)} below your estimated tax liability.`,
-      dedup:    `TPVE_RED_${new Date().toISOString().split('T')[0]}`,
-    });
-  } else if (tpveStatus === 'TPVE_AMBER') {
-    alerts.push({
-      type:     'TPVE_AMBER',
-      severity: 'AMBER',
-      title:    'Tax pot approaching target',
-      body:     `Your tax pot is £${shortfall.toFixed(2)} below your current tax liability estimate.`,
-      dedup:    `TPVE_AMBER_${new Date().toISOString().split('T')[0]}`,
-    });
-  } else if (tpveStatus === 'TPVE_GOOD') {
-    alerts.push({
-      type:     'TPVE_GOOD',
-      severity: 'INFO',
-      title:    'Tax pot on track',
-      body:     'Your tax pot covers your current estimated tax liability.',
-      dedup:    `TPVE_GOOD_${getCurrentTaxYear()}`, // Once per tax year
-    });
-  }
+  // TPVE alerts — disabled until runway engine is updated to use designation-based pot balance
+  // TODO: re-enable before launch
 
   // Insert notifications
   for (const alert of alerts) {

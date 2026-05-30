@@ -199,7 +199,8 @@ async function checkVATThreshold(userId, taxYear = '2026/27') {
   const exceeded       = rolling12m >= threshold;
 
   if (exceeded || approaching) {
-    await query(`
+    // VAT notifications disabled — keeping expenses + income review only
+    if (false) await query(`
       INSERT INTO notifications
         (user_id, alert_type, severity, title, body, dedup_key, valid_until)
       VALUES ($1, $2, $3, $4, $5, $6, NOW() + INTERVAL '30 days')
