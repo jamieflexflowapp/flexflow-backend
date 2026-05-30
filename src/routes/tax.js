@@ -196,7 +196,8 @@ router.get('/self-assessment', async (req, res) => {
        WHERE user_id = $1
          AND transaction_date >= '2026-04-06'
          AND amount > 0
-         AND is_income = true`,
+         AND is_income = true
+         AND user_confirmed = true`,
       [req.user.userId]
     );
 
