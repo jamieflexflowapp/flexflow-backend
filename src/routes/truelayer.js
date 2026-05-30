@@ -391,30 +391,8 @@ async function syncAccountTransactions(userId, accountId, accessToken) {
         );
       }
 
-      // If income — store in income_events with dual amount columns
-      if (classification.is_income) {
-        const taxYear = getTaxYear(new Date(normalised.transaction_date));
-
-        await query(`
-          INSERT INTO income_events
-            (user_id, transaction_id, amount, gross_amount, income_date,
-             income_type, tax_year, is_cis, cis_deduction_rate,
-             tax_deducted, is_rental)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-          ON CONFLICT DO NOTHING
-        `, [
-          userId, txnId,
-          classification.amount_net   || Math.abs(normalised.amount),
-          classification.gross_amount || Math.abs(normalised.amount),
-          normalised.transaction_date,
-          classification.income_type  || 'se',
-          taxYear,
-          classification.is_cis       || false,
-          classification.cis_deduction_rate || null,
-          classification.tax_deducted || 0,
-          classification.is_rental    || false,
-        ]);
-      }
+      // Income events are NOT written here — only written when user confirms
+      // via PATCH /transactions/:id/confirm-income
 
       imported++;
     }
