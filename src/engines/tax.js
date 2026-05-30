@@ -50,7 +50,7 @@ async function loadRates(taxYear = '2026/27', isScottish = false) {
      FROM tax_rates
      WHERE tax_year = $1
        AND jurisdiction IN ('UK', $2)
-     ORDER BY jurisdiction DESC`, // SCO overrides UK for same key
+     ORDER BY jurisdiction ASC`, // UK loaded first, SCO overwrites for same key
     [taxYear, jurisdiction]
   );
 
