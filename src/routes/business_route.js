@@ -10,7 +10,7 @@ router.get('/summary', async (req, res) => {
   try {
     const userId = req.user.userId;
     const u = (await query(
-      `SELECT director_salary_annual, dividend_frequency, is_scottish_taxpayer FROM users WHERE id = $1`,
+      `SELECT director_salary_annual, dividend_frequency, is_scottish_taxpayer, annual_employer_pension_contribution FROM users WHERE id = $1`,
       [userId]
     )).rows[0];
     if (!u) return res.status(404).json({ error: 'User not found' });
@@ -52,8 +52,12 @@ router.get('/summary', async (req, res) => {
     const EMPLOYER_NI_THRESHOLD = 5000;
     const employerNI = Math.round(Math.max(0, dirSalaryAnnual - EMPLOYER_NI_THRESHOLD) * EMPLOYER_NI_RATE * 100) / 100;
 
-    // Taxable profit = Turnover − Expenses − Full Annual Salary − Employer NI
-    const ctTaxableProfit = Math.max(0, Math.round((fytdTurnover - fytdExpenses - dirSalaryAnnual - employerNI) * 100) / 100);
+    // Employer pension — deductible from CT taxable profit
+    const empPensionAnnual = parseFloat(u.annual_employer_pension_contribution || 0);
+    const empPensionTYTD = Math.round(empPensionAnnual / 12 * monthsElapsed * 100) / 100;
+
+    // Taxable profit = Turnover − Expenses − Full Annual Salary − Employer NI − Employer Pension
+    const ctTaxableProfit = Math.max(0, Math.round((fytdTurnover - fytdExpenses - dirSalaryAnnual - employerNI - empPensionTYTD) * 100) / 100);
 
     // Corporation Tax (2026/27 rates)
     let corpTaxReserve = 0;
@@ -102,6 +106,7 @@ router.get('/summary', async (req, res) => {
       monthsElapsed,
       monthsRemaining,
       ctTaxableProfit,
+      empPensionTYTD,
       corpTaxReserve,
       availableForDividends,
       divTax,
