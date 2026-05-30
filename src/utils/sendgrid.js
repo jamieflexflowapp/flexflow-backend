@@ -92,4 +92,16 @@ The FlexFlow Team`,
   await sgMail.send(msg);
 }
 
-module.exports = { sendVerificationEmail, sendWelcomeEmail, sendPasswordResetEmail };
+// ── Generic email sender ─────────────────────────────────────────────────────
+async function sendEmail({ to, subject, text, html }) {
+  const msg = {
+    to,
+    from: { email: FROM_EMAIL, name: FROM_NAME },
+    subject,
+    text,
+    html: html || text,
+  };
+  await sgMail.send(msg);
+}
+
+module.exports = { sendVerificationEmail, sendWelcomeEmail, sendPasswordResetEmail, sendEmail };
