@@ -244,8 +244,9 @@ function calcNationalInsurance(seProfit, dateOfBirth, rates) {
 
   // Class 2 NI — auto-credited above SPT, voluntary below
   // GOV.UK 2026/27: profits >= SPT (£7,105) = credited, nothing to pay
-  // Only charge if profits are BELOW SPT (voluntary contribution scenario)
-  const class2 = seProfit < spt
+  // Only charge if profits > 0 AND below SPT (voluntary contribution scenario)
+  // Zero or negative profit = trading loss, no Class 2 applies
+  const class2 = (seProfit > 0 && seProfit < spt)
     ? Math.round(c2Rate * 52 * 100) / 100
     : 0;
 
