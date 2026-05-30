@@ -316,7 +316,7 @@ router.patch('/:id/confirm-income', async (req, res) => {
         await query(
           `INSERT INTO income_events (user_id, transaction_id, amount, gross_amount, income_date, income_type, tax_year, currency, is_cis, is_rental, included_in_smoothing)
            VALUES ($1, $2, $3, $3, $4, 'se', $5, 'GBP', false, false, true)
-           ON CONFLICT (transaction_id) DO UPDATE SET gross_amount = EXCLUDED.gross_amount, updated_at = NOW()`,
+           ON CONFLICT DO NOTHING`,
           [userId, id, parseFloat(txn.amount), txn.transaction_date, taxYear]
         );
       }

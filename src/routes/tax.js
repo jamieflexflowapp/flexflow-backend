@@ -51,8 +51,8 @@ router.get('/liability', async (req, res) => {
       mtdRequired:      r.mtd_required      || false,
       calculatedAt:     r.calculated_at,
       // camelCase aliases expected by frontend TaxScreen
-      grossIncomeYtd:              (r.gross_se || 0) + (r.gross_paye || 0),
-      taxableProfit:               r.gross_se          || 0,
+      grossIncomeYtd:              (r.gross_se_raw || r.gross_se || 0) + (r.gross_paye || 0),
+      taxableProfit:               (r.gross_se || 0) + (r.gross_paye || 0),
       incomeTaxDue:                r.it_total          || 0,
       class4NiDue:                 r.ni_class4         || 0,
       class2NiDue:                 r.ni_class2         || 0,

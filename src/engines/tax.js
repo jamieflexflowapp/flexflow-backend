@@ -243,7 +243,9 @@ function calcNationalInsurance(seProfit, dateOfBirth, rates) {
   }
 
   // Class 2 NI — auto-credited above SPT, voluntary below
-  const class2 = seProfit > spt
+  // GOV.UK 2026/27: profits >= SPT (£7,105) = credited, nothing to pay
+  // Only charge if profits are BELOW SPT (voluntary contribution scenario)
+  const class2 = seProfit < spt
     ? Math.round(c2Rate * 52 * 100) / 100
     : 0;
 
@@ -320,7 +322,8 @@ async function calculateTaxLiability(userId, taxYear = '2026/27') {
             COALESCE(annual_employer_pension_contribution, 0) AS annual_employer_pension_contribution,
             COALESCE(mpaa_triggered, false) AS mpaa_triggered,
             mpaa_trigger_date,
-            COALESCE(pension_contribution_frequency, 'annual') AS pension_contribution_frequency
+            COALESCE(pension_contribution_frequency, 'annual') AS pension_contribution_frequency,
+            COALESCE(total_deductions, 0) AS total_deductions
      FROM users WHERE id = $1`,
     [userId]
   );
@@ -374,7 +377,10 @@ async function calculateTaxLiability(userId, taxYear = '2026/27') {
   const grossCIS       = incomeByType['cis']         || 0;
 
   // CIS workers: total SE = gross_amount (pre-deduction) from income_events
-  const totalSE = grossSE + grossCIS;
+  // Deduct confirmed business expenses from SE income for tax calculation
+  const seDeductions = parseFloat(user.total_deductions) || 0;
+  const grossSETotal = grossSE + grossCIS;
+  const totalSE = Math.max(0, grossSETotal - seDeductions);
 
   // Load rental income details if applicable
   let rentalProfit = 0, finCosts = 0, finCostsBF = 0;
@@ -584,6 +590,7 @@ async function calculateTaxLiability(userId, taxYear = '2026/27') {
     // Income
     gross_paye:         grossPAYE,
     gross_se:           totalSE,
+    gross_se_raw:       grossSETotal,
     gross_dividends:    grossDividends,
     gross_rental:       grossRental,
     partner_share:      partnerShare,
