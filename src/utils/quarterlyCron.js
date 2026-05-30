@@ -145,17 +145,8 @@ async function processUserReview(user, taxYear, quarter) {
     `You may want to check whether your salary and dividend split still reflects your current position.`;
   // Note: "may want to check" is factual — not "you should change" or "we recommend"
 
-  // Create notification
-  const notif = await query(`
-    INSERT INTO notifications
-      (user_id, alert_type, severity, title, body, dedup_key, valid_until)
-    VALUES ($1, 'SALARY_REVIEW_DUE', 'INFO', $2, $3, $4, NOW() + INTERVAL '90 days')
-    ON CONFLICT (user_id, dedup_key) DO NOTHING
-    RETURNING id
-  `, [
-    user.id, notifTitle, notifBody,
-    `SALARY_REVIEW_${quarter}_${taxYear}`,
-  ]);
+  // Quarterly salary review notification disabled
+  const notif = { rows: [] };
 
   // Log to quarterly_review_log
   await logReview(

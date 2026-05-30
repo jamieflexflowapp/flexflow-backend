@@ -340,19 +340,7 @@ async function fireDangerAlerts(userId, months) {
   for (const month of months) {
     if (month.danger_level === 'RED') {
       const dedupKey = `DANGER_${month.danger_level}_${month.month}`;
-      await query(`
-        INSERT INTO notifications
-          (user_id, alert_type, severity, title, body, dedup_key, valid_until)
-        VALUES ($1,$2,$3,$4,$5,$6, NOW() + INTERVAL '30 days')
-        ON CONFLICT (user_id, dedup_key) DO NOTHING
-      `, [
-        userId,
-        'DANGER_MONTH_AHEAD',
-        month.danger_level,
-        `⚠️ Risk month — projected shortfall: ${month.month_label}`,
-        month.alert_copy,
-        dedupKey,
-      ]);
+      // Forecast danger notifications disabled
     }
   }
 }
