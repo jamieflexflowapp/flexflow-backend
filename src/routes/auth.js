@@ -6,7 +6,7 @@ const authController = require('../middleware/authController');
 const { verifyToken } = require('../middleware/auth');
 const bcrypt         = require('bcryptjs');
 const { query }      = require('../config/database');
-const { sendVerificationEmail } = require('../utils/sendgrid');
+const { sendEmail } = require('../utils/sendgrid');
 
 router.post('/register',            authController.register);
 router.post('/verify-email',        authController.verifyEmail);
