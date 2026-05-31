@@ -390,6 +390,7 @@ router.get('/home-office', async (req, res) => {
 });
 
 router.post('/home-office', async (req, res) => {
+  console.log('[HOME OFFICE] POST monthly_hours:', req.body.monthly_hours);
   try {
     const { monthly_hours, method = 'flat_rate' } = req.body;
 
@@ -441,6 +442,7 @@ router.get('/mileage', async (req, res) => {
 });
 
 router.post('/mileage', async (req, res) => {
+  console.log('[MILEAGE] POST request');
   try {
     const taxYear = getCurrentTaxYear();
     const userId = req.user.userId;
@@ -482,6 +484,7 @@ router.post('/mileage', async (req, res) => {
 
 router.delete('/mileage/:id', async (req, res) => {
   try {
+    console.log('[MILEAGE] DELETE id:', req.params.id);
     const result = await query(
       `DELETE FROM mileage_log WHERE id = $1 AND user_id = $2`,
       [req.params.id, req.user.userId]
