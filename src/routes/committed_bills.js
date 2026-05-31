@@ -63,6 +63,10 @@ router.get('/spending-transactions', verifyToken, checkOnboardingComplete, async
              AND (cb.transaction_id = t.truelayer_id
                OR LOWER(cb.name) = LOWER(COALESCE(NULLIF(TRIM(t.merchant_name),''), NULLIF(TRIM(t.description),''))))
          )
+         AND NOT EXISTS (
+           SELECT 1 FROM committed_bill_dismissals cbd
+           WHERE cbd.user_id = $1 AND cbd.transaction_id = t.truelayer_id
+         )
        ORDER BY COALESCE(NULLIF(TRIM(t.merchant_name),''), NULLIF(TRIM(t.description),'')), t.transaction_date DESC
        LIMIT 50`,
       [userId]
@@ -153,6 +157,66 @@ router.put('/:id/restore', verifyToken, checkOnboardingComplete, async (req, res
   } catch (err) {
     console.error('Restore committed bill error:', err);
     res.status(500).json({ error: 'Failed to restore committed bill' });
+  }
+});
+
+
+// ── POST /committed-bills/dismiss ───────────────────────────────────────────
+// Dismiss a pending transaction — user says it is NOT a committed bill
+router.post('/dismiss', verifyToken, checkOnboardingComplete, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { transaction_id } = req.body;
+    if (!transaction_id) return res.status(400).json({ error: 'transaction_id required' });
+    await query(
+      `INSERT INTO committed_bill_dismissals (user_id, transaction_id)
+       VALUES ($1, $2) ON CONFLICT (user_id, transaction_id) DO NOTHING`,
+      [userId, transaction_id]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Dismiss bill transaction error:', err);
+    res.status(500).json({ error: 'Failed to dismiss transaction' });
+  }
+});
+
+// ── DELETE /committed-bills/dismiss/:transaction_id ──────────────────────────
+// Undo a dismissal — move transaction back to pending
+router.delete('/dismiss/:transaction_id', verifyToken, checkOnboardingComplete, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { transaction_id } = req.params;
+    await query(
+      `DELETE FROM committed_bill_dismissals WHERE user_id = $1 AND transaction_id = $2`,
+      [userId, transaction_id]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Undo dismiss bill error:', err);
+    res.status(500).json({ error: 'Failed to undo dismissal' });
+  }
+});
+
+// ── GET /committed-bills/dismissed ──────────────────────────────────────────
+// Returns dismissed transactions
+router.get('/dismissed', verifyToken, checkOnboardingComplete, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const result = await query(
+      `SELECT t.id, t.truelayer_id AS transaction_id,
+              COALESCE(NULLIF(TRIM(t.merchant_name),''), NULLIF(TRIM(t.description),'')) AS name,
+              ABS(t.amount) AS amount,
+              t.transaction_date
+       FROM committed_bill_dismissals cbd
+       JOIN transactions t ON t.truelayer_id = cbd.transaction_id AND t.user_id = $1
+       WHERE cbd.user_id = $1
+       ORDER BY cbd.created_at DESC`,
+      [userId]
+    );
+    res.json({ transactions: result.rows });
+  } catch (err) {
+    console.error('Get dismissed bills error:', err);
+    res.status(500).json({ error: 'Failed to fetch dismissed transactions' });
   }
 });
 
