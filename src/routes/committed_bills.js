@@ -40,7 +40,7 @@ router.get('/spending-transactions', verifyToken, checkOnboardingComplete, async
   try {
     const userId = req.user.userId;
     const result = await query(
-      `SELECT DISTINCT ON (COALESCE(NULLIF(TRIM(t.merchant_name),''), NULLIF(TRIM(t.description),'')))
+      `SELECT
          t.id, t.truelayer_id AS transaction_id,
          COALESCE(NULLIF(TRIM(t.merchant_name),''), NULLIF(TRIM(t.description),'')) AS name,
          ABS(t.amount) AS amount,
@@ -67,7 +67,7 @@ router.get('/spending-transactions', verifyToken, checkOnboardingComplete, async
            SELECT 1 FROM committed_bill_dismissals cbd
            WHERE cbd.user_id = $1 AND cbd.transaction_id = t.truelayer_id
          )
-       ORDER BY COALESCE(NULLIF(TRIM(t.merchant_name),''), NULLIF(TRIM(t.description),'')), t.transaction_date DESC
+       ORDER BY t.transaction_date DESC
        LIMIT 50`,
       [userId]
     );
