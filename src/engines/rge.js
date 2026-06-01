@@ -9,7 +9,7 @@
  *
  * Reports produced:
  *   Monthly PDF      — PLUS + PRO — auto 1st of following month (covers previous month)
- *   Quarterly PDF    — PRO only   — end of each calendar quarter
+ *   [REMOVED] Quarterly PDF — removed, monthly + annual only
  *   Annual PDF       — PRO only   — end of each tax year (5 April)
  *   Monthly CSV      — ALL tiers  — raw transaction export
  *
