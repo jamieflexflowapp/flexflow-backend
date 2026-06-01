@@ -172,6 +172,26 @@ router.get('/callback', async (req, res) => {
   }
 });
 
+// ── POST /truelayer/auto-sync ────────────────────────────────────────────────
+// Called on app load — only syncs if last sync was >15 minutes ago
+router.post('/auto-sync', verifyToken, checkOnboardingComplete, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const threshold = new Date(Date.now() - 15 * 60 * 1000);
+    const connections = await query(
+      'SELECT account_id, last_synced_at, access_token FROM bank_connections WHERE user_id = $1 AND is_active = true AND (last_synced_at IS NULL OR last_synced_at < $2) LIMIT 1',
+      [userId, threshold]
+    );
+    if (connections.rows.length === 0) return res.json({ synced: false, reason: 'recently_synced' });
+    const accessToken = connections.rows[0].access_token;
+    syncTransactionsForUser(userId, accessToken, false).catch(err => console.error('[AUTO-SYNC] error:', err.message));
+    res.json({ synced: true });
+  } catch (err) {
+    console.error('[AUTO-SYNC]', err.message);
+    res.status(500).json({ error: 'Auto-sync failed' });
+  }
+});
+
 // ── POST /truelayer/sync ──────────────────────────────────────────────────────
 // Manual trigger for transaction sync (for testing and catch-up)
 
@@ -376,6 +396,7 @@ async function syncAccountTransactions(userId, accountId, accessToken, isInitial
            merchant_name, transaction_date, transaction_type,
            category, sub_category, is_classified, is_income, is_cis)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true,$11,$12)
+        ON CONFLICT DO NOTHING
         RETURNING id
       `, [
         userId, bankConnectionId, normalised.truelayer_id,
@@ -386,6 +407,7 @@ async function syncAccountTransactions(userId, accountId, accessToken, isInitial
         classification.is_cis || false,
       ]);
 
+      if (!txnResult.rows[0]) continue; // already exists, skip
       const txnId = txnResult.rows[0].id;
 
       // Auto-dismiss if TCE flagged it (e.g. returned DD — not income, not for review)
