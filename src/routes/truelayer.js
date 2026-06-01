@@ -260,6 +260,23 @@ router.post('/webhook', async (req, res) => {
   }
 });
 
+// ── DELETE /truelayer/accounts/:id — disconnect a bank account ───────────────
+router.delete('/accounts/:id', verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await query(
+      'UPDATE bank_connections SET is_active = false, updated_at = NOW() WHERE id = $1 AND user_id = $2 RETURNING id',
+      [id, req.user.userId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Account not found' });
+    console.log('[DISCONNECT] Bank account disconnected:', id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[DISCONNECT]', err.message);
+    res.status(500).json({ error: 'Failed to disconnect account' });
+  }
+});
+
 // ── GET /truelayer/accounts ───────────────────────────────────────────────────
 
 router.get('/accounts', verifyToken, async (req, res) => {
