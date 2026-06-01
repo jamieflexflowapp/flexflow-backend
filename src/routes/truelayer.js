@@ -157,7 +157,7 @@ router.get('/callback', async (req, res) => {
     });
 
     // Kick off initial transaction sync (async — don't wait)
-    syncTransactionsForUser(userId, access_token).catch(err =>
+    syncTransactionsForUser(userId, access_token, true).catch(err =>
       console.error('Initial sync error:', err.message)
     );
 
@@ -295,27 +295,29 @@ router.post('/designate-tax', verifyToken, checkOnboardingComplete, async (req, 
 // CORE SYNC FUNCTIONS
 // ══════════════════════════════════════════════════════════════════════════════
 
-async function syncTransactionsForUser(userId, accessToken) {
+async function syncTransactionsForUser(userId, accessToken, isInitial = false) {
   const connections = await query(
     `SELECT id, account_id FROM bank_connections
      WHERE user_id = $1 AND is_active = true`,
     [userId]
   );
   for (const conn of connections.rows) {
-    await syncAccountTransactions(userId, conn.account_id, accessToken);
+    await syncAccountTransactions(userId, conn.account_id, accessToken, isInitial);
   }
 }
 
-async function syncAccountTransactions(userId, accountId, accessToken) {
+async function syncAccountTransactions(userId, accountId, accessToken, isInitial = false) {
   let imported = 0;
 
   try {
-    // Fetch transactions from TrueLayer (from start of current tax year)
+    // On initial sync use 6 years back to maximise Monzo 5-min window
+    // On regular sync use tax year start (6 April)
     const now = new Date();
     const taxYearStart = now.getMonth() >= 3 && !(now.getMonth() === 3 && now.getDate() < 6)
       ? new Date(now.getFullYear(), 3, 6)
       : new Date(now.getFullYear() - 1, 3, 6);
-    const from = taxYearStart;
+    const sixYearsAgo = new Date(now.getFullYear() - 6, now.getMonth(), now.getDate());
+    const from = isInitial ? sixYearsAgo : taxYearStart;
 
     const response = await axios.get(
       `${TL_API_URL}/data/v1/accounts/${accountId}/transactions`, {
