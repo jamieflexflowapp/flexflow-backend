@@ -208,7 +208,7 @@ async function fireRunwayAlerts(userId, runwayStatus, tpveStatus, runwayWeeks, s
 
   // Runway alerts — disabled, keeping expenses + income review only
 
-  // TPVE alert — fire if tax pot is below target
+  // TPVE alert — fire if tax pot is below target, clear if good
   if (tpveStatus === 'TPVE_RED' && shortfall > 0) {
     alerts.push({
       type: 'TPVE',
@@ -217,6 +217,11 @@ async function fireRunwayAlerts(userId, runwayStatus, tpveStatus, runwayWeeks, s
       body: `Your tax pot is £${shortfall.toFixed(2)} below your estimated tax liability. Top it up to avoid a shortfall at self-assessment.`,
       dedup: 'tpve-below-target',
     });
+  } else if (tpveStatus === 'TPVE_GOOD' || tpveStatus === 'TPVE_UNKNOWN') {
+    await query(
+      `DELETE FROM notifications WHERE user_id = $1 AND dedup_key = 'tpve-below-target'`,
+      [userId]
+    );
   }
 
   // Insert notifications
