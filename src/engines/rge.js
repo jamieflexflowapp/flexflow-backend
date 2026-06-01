@@ -444,9 +444,77 @@ function getTaxYear(date) {
   return `${start}/${String(start + 1).slice(-2)}`;
 }
 
+async function generateAnnualPDF(userId, taxYear) {
+  const [startYearStr] = taxYear.split('/');
+  const startYear = parseInt(startYearStr);
+  const fyStart = startYear + '-04-06';
+  const fyEnd   = (startYear + 1) + '-04-05';
+  const userResult = await query('SELECT full_name, income_structure FROM users WHERE id = $1', [userId]);
+  const user = userResult.rows[0];
+  const incomeResult = await query('SELECT SUM(amount) as total FROM income_events WHERE user_id = $1 AND income_date >= $2 AND income_date <= $3', [userId, fyStart, fyEnd]);
+  const totalIncome = parseFloat(incomeResult.rows[0]?.total || 0);
+  const expenseResult = await query("SELECT SUM(ABS(amount)) as total FROM transactions WHERE user_id = $1 AND category = 'expense' AND transaction_date >= $2 AND transaction_date <= $3", [userId, fyStart, fyEnd]);
+  const totalExpenses = parseFloat(expenseResult.rows[0]?.total || 0);
+  const taxResult = await query('SELECT total_tax_liability, income_tax, national_insurance, total_deductions, sa_deadline FROM tax_calculations WHERE user_id = $1 AND tax_year = $2', [userId, taxYear]);
+  const taxCalc = taxResult.rows[0] || {};
+  const monthlyResult = await query("SELECT DATE_TRUNC('month', income_date) as month, SUM(amount) as total FROM income_events WHERE user_id = $1 AND income_date >= $2 AND income_date <= $3 GROUP BY DATE_TRUNC('month', income_date) ORDER BY month", [userId, fyStart, fyEnd]);
+  const doc = new PDFDocument({ margin: 50, size: 'A4' });
+  const buffers = [];
+  doc.on('data', b => buffers.push(b));
+  doc.rect(0, 0, doc.page.width, 80).fill('#0E1928');
+  doc.fillColor('#14A8AE').fontSize(20).font('Helvetica-Bold').text('FlexFlow', 50, 25);
+  doc.fillColor('#FFFFFF').fontSize(12).font('Helvetica').text('Annual Summary — Tax Year ' + taxYear, 50, 50);
+  doc.fillColor('#9CA3AF').fontSize(9).text(user.full_name + ' · Prepared automatically', 50, 65);
+  doc.moveDown(3);
+  renderSectionHeader(doc, 'Year at a Glance');
+  renderKeyValueTable(doc, [
+    { label: 'Total income',       value: '£' + totalIncome.toFixed(2) },
+    { label: 'Total expenses',     value: '£' + totalExpenses.toFixed(2) },
+    { label: 'Tax deductions',     value: '£' + parseFloat(taxCalc.total_deductions || 0).toFixed(2) },
+    { label: 'Tax liability',      value: '£' + parseFloat(taxCalc.total_tax_liability || 0).toFixed(2) },
+    { label: 'Income tax',         value: '£' + parseFloat(taxCalc.income_tax || 0).toFixed(2) },
+    { label: 'National Insurance', value: '£' + parseFloat(taxCalc.national_insurance || 0).toFixed(2) },
+    { label: 'SA deadline',        value: taxCalc.sa_deadline ? new Date(taxCalc.sa_deadline).toLocaleDateString('en-GB') : '31 Jan' },
+  ]);
+  doc.moveDown(1);
+  renderSectionHeader(doc, 'Monthly Income Breakdown');
+  if (monthlyResult.rows.length > 0) {
+    renderKeyValueTable(doc, monthlyResult.rows.map(r => ({ label: new Date(r.month).toLocaleString('en-GB', { month: 'long', year: 'numeric' }), value: '£' + parseFloat(r.total).toFixed(2) })));
+  } else {
+    doc.fillColor('#6B7280').fontSize(9).text('No income events recorded this tax year.', { indent: 10 });
+  }
+  addFooter(doc, ACCOUNTANT_DISCLAIMER);
+  doc.end();
+  return new Promise(resolve => { doc.on('end', () => resolve(Buffer.concat(buffers))); });
+}
+
+async function generateAnnualCSV(userId, taxYear) {
+  const [startYearStr] = taxYear.split('/');
+  const startYear = parseInt(startYearStr);
+  const fyStart = startYear + '-04-06';
+  const fyEnd   = (startYear + 1) + '-04-05';
+
+  const result = await query(
+    'SELECT t.transaction_date, t.description, t.merchant_name, t.amount, t.category, t.sub_category, t.transaction_type, bc.account_name, bc.provider FROM transactions t LEFT JOIN bank_connections bc ON bc.id = t.bank_connection_id WHERE t.user_id = $1 AND t.transaction_date >= $2 AND t.transaction_date <= $3 ORDER BY t.transaction_date DESC',
+    [userId, fyStart, fyEnd]
+  );
+
+  const headers = ['Date','Description','Merchant','Amount','Type','Category','Sub-Category','Account','Provider'];
+  const rows = result.rows.map(r => [
+    r.transaction_date?.toISOString?.()?.split?.('T')[0] || r.transaction_date,
+    '"' + (r.description || '').replace(/"/g, '""') + '"',
+    '"' + (r.merchant_name || '').replace(/"/g, '""') + '"',
+    r.amount, r.transaction_type, r.category, r.sub_category,
+    '"' + (r.account_name || '').replace(/"/g, '""') + '"',
+    r.provider,
+  ]);
+  return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+}
+
 module.exports = {
   generateMonthlyPDF,
-  generateQuarterlyPDF,
+  generateAnnualPDF,
   generateMonthlyCSV,
+  generateAnnualCSV,
   assembleMonthlyData,
 };
