@@ -36,11 +36,10 @@ async function calculateRunway(userId) {
   // Step 1: Get total bank balance across all connected accounts
   const bankResult = await query(
     `SELECT
-       COALESCE(SUM(CASE WHEN is_tax_account = false THEN tax_pot_balance ELSE 0 END), 0) as other_balance,
-       COALESCE(SUM(CASE WHEN is_tax_account = true  THEN tax_pot_balance ELSE 0 END), 0) as tax_pot_balance,
-       COUNT(*) as account_count
-     FROM bank_connections
-     WHERE user_id = $1 AND is_active = true`,
+       COALESCE(SUM(bc.current_balance), 0) as tax_pot_balance
+     FROM bank_connections bc
+     JOIN account_designations ad ON ad.bank_account_id = bc.account_id AND ad.user_id = $1
+     WHERE bc.user_id = $1 AND bc.is_active = true AND ad.designation_type = 'tax'`,
     [userId]
   );
 
@@ -97,18 +96,17 @@ async function calculateRunway(userId) {
 
   // Step 5: TPVE — Tax pot verification
   const tpveResult = await query(
-    `SELECT tax_pot_target FROM users WHERE id = $1`,
+    `SELECT total_tax_liability FROM tax_calculations WHERE user_id = $1 ORDER BY calculated_at DESC LIMIT 1`,
     [userId]
   );
-  const taxPotTarget  = parseFloat(tpveResult.rows[0]?.tax_pot_target) || 0;
+  const taxPotTarget  = parseFloat(tpveResult.rows[0]?.total_tax_liability) || 0;
   const taxPotCoverage = taxPotTarget > 0
     ? Math.round((taxPotBalance / taxPotTarget) * 100)
     : 100;
 
   let tpveStatus;
   if (taxPotTarget === 0)         tpveStatus = 'TPVE_UNKNOWN';
-  else if (taxPotCoverage >= 100) tpveStatus = 'TPVE_GOOD';
-  else if (taxPotCoverage >= 80)  tpveStatus = 'TPVE_AMBER';
+  else if (taxPotBalance >= taxPotTarget) tpveStatus = 'TPVE_GOOD';
   else                            tpveStatus = 'TPVE_RED';
 
   const taxPotShortfall = Math.max(0, Math.round((taxPotTarget - taxPotBalance) * 100) / 100);
@@ -210,8 +208,16 @@ async function fireRunwayAlerts(userId, runwayStatus, tpveStatus, runwayWeeks, s
 
   // Runway alerts — disabled, keeping expenses + income review only
 
-  // TPVE alerts — disabled until runway engine is updated to use designation-based pot balance
-  // TODO: re-enable before launch
+  // TPVE alert — fire if tax pot is below target
+  if (tpveStatus === 'TPVE_RED' && shortfall > 0) {
+    alerts.push({
+      type: 'TPVE',
+      severity: 'warning',
+      title: 'Tax pot below target',
+      body: `Your tax pot is £${shortfall.toFixed(2)} below your estimated tax liability. Top it up to avoid a shortfall at self-assessment.`,
+      dedup: 'tpve-below-target',
+    });
+  }
 
   // Insert notifications
   for (const alert of alerts) {
