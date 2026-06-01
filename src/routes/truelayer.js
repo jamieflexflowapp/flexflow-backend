@@ -310,9 +310,12 @@ async function syncAccountTransactions(userId, accountId, accessToken) {
   let imported = 0;
 
   try {
-    // Fetch transactions from TrueLayer (last 12 months)
-    const from = new Date();
-    from.setFullYear(from.getFullYear() - 1);
+    // Fetch transactions from TrueLayer (from start of current tax year)
+    const now = new Date();
+    const taxYearStart = now.getMonth() >= 3 && !(now.getMonth() === 3 && now.getDate() < 6)
+      ? new Date(now.getFullYear(), 3, 6)
+      : new Date(now.getFullYear() - 1, 3, 6);
+    const from = taxYearStart;
 
     const response = await axios.get(
       `${TL_API_URL}/data/v1/accounts/${accountId}/transactions`, {
