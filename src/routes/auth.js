@@ -75,6 +75,12 @@ router.delete('/account', verifyToken, async (req, res) => {
     }
     await query(`DELETE FROM users WHERE id = $1`, [userId]);
 
+    // Verify deletion before sending email
+    const verifyResult = await query(`SELECT id FROM users WHERE id = $1`, [userId]);
+    if (verifyResult.rows.length > 0) {
+      return res.status(500).json({ error: 'Account deletion could not be verified' });
+    }
+
     const deletedAt = new Date().toLocaleString('en-GB', { timeZone: 'Europe/London' });
     const reasonText = reason === 'Other' ? (otherReason || 'Other') : (reason || 'Not provided');
     await sendEmail({
