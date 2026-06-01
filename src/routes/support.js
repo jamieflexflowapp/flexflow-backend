@@ -18,7 +18,7 @@ router.post('/', verifyToken, async (req, res) => {
     const userResult = await query(`SELECT email, full_name FROM users WHERE id = $1`, [userId]);
     const user = userResult.rows[0];
     const userEmail = user?.email || 'Unknown';
-    const userName = `${user?.first_name || ''} ${user?.last_name || ''}`.trim() || 'Unknown';
+    const userName = user?.full_name || 'Unknown';
     const sentAt = new Date().toLocaleString('en-GB', { timeZone: 'Europe/London' });
 
     console.log('[SUPPORT] Sending email to jamie@flexflowapp.co.uk for user:', userEmail);
