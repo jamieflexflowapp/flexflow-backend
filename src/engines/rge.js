@@ -371,36 +371,75 @@ async function generateQuarterlyPDF(userId, year, quarter) {
 
 async function generateMonthlyCSV(userId, year, month) {
   const monthStart = `${year}-${String(month).padStart(2,'0')}-01`;
-  const monthEnd   = new Date(year, month, 0).toISOString().split('T')[0];
+  const lastDay    = new Date(year, month, 0).getDate();
+  const monthEnd   = `${year}-${String(month).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
 
-  const result = await query(
-    `SELECT t.transaction_date, t.description, t.merchant_name,
-            t.amount, t.category, t.sub_category, t.transaction_type,
-            bc.account_name, bc.provider
+  const userResult = await query('SELECT full_name FROM users WHERE id = $1', [userId]);
+  const userName = userResult.rows[0]?.full_name || 'FlexFlow User';
+  const monthName = new Date(year, month - 1, 1).toLocaleString('en-GB', { month: 'long', year: 'numeric' });
+
+  // Tax summary
+  const taxYear = getTaxYear(new Date(year, month - 1, 1));
+  const taxResult = await query(
+    'SELECT total_tax_liability, tax_pot_target, monthly_tax_pot_contrib FROM tax_calculations WHERE user_id = $1 AND tax_year = $2',
+    [userId, taxYear]
+  );
+  const tax = taxResult.rows[0] || {};
+
+  // Income transactions
+  const incomeResult = await query(
+    `SELECT t.transaction_date, t.description, t.merchant_name, t.amount, bc.account_name
      FROM transactions t
      LEFT JOIN bank_connections bc ON bc.id = t.bank_connection_id
-     WHERE t.user_id = $1
-       AND t.transaction_date >= $2
-       AND t.transaction_date <= $3
+     WHERE t.user_id = $1 AND t.is_income = true AND t.user_confirmed = true
+       AND t.transaction_date >= $2 AND t.transaction_date <= $3
      ORDER BY t.transaction_date DESC`,
     [userId, monthStart, monthEnd]
   );
 
-  const headers = ['Date', 'Description', 'Merchant', 'Amount', 'Type', 'Category', 'Sub-Category', 'Account', 'Provider'];
-  const rows = result.rows.map(r => [
-    r.transaction_date?.toISOString?.()?.split?.('T')[0] || r.transaction_date,
-    `"${(r.description || '').replace(/"/g, '""')}"`,
-    `"${(r.merchant_name || '').replace(/"/g, '""')}"`,
-    r.amount,
-    r.transaction_type,
-    r.category,
-    r.sub_category,
-    `"${(r.account_name || '').replace(/"/g, '""')}"`,
-    r.provider,
-  ]);
+  // Expense transactions
+  const expenseResult = await query(
+    `SELECT t.transaction_date, t.description, t.merchant_name, t.amount, t.category, t.sub_category, bc.account_name
+     FROM transactions t
+     LEFT JOIN bank_connections bc ON bc.id = t.bank_connection_id
+     WHERE t.user_id = $1 AND t.is_income = false AND t.user_confirmed = true
+       AND t.transaction_date >= $2 AND t.transaction_date <= $3
+     ORDER BY t.transaction_date DESC`,
+    [userId, monthStart, monthEnd]
+  );
 
-  const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-  return csv;
+  const esc = (v) => { const s = String(v ?? ''); return (s.includes(',') || s.includes('"')) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB') : '';
+  const fmtAmt = (n) => parseFloat(n || 0).toFixed(2);
+
+  const totalIncome = incomeResult.rows.reduce((s, r) => s + parseFloat(r.amount || 0), 0);
+  const totalExpenses = expenseResult.rows.reduce((s, r) => s + Math.abs(parseFloat(r.amount || 0)), 0);
+
+  const rows = [
+    'FlexFlow - Monthly Financial Report',
+    'Period,' + monthName,
+    'Generated,' + new Date().toLocaleDateString('en-GB'),
+    'Name,' + esc(userName),
+    'Tax Year,' + taxYear,
+    '',
+    'SECTION 1 - MONTHLY SUMMARY',
+    'Field,Amount',
+    'Total Income,' + fmtAmt(totalIncome),
+    'Total Expenses,' + fmtAmt(totalExpenses),
+    'Tax Liability (FYTD),' + fmtAmt(tax.total_tax_liability),
+    'Monthly Tax Contribution,' + fmtAmt(tax.monthly_tax_pot_contrib),
+    'Tax Pot Target,' + fmtAmt(tax.tax_pot_target),
+    '',
+    'SECTION 2 - INCOME TRANSACTIONS',
+    'Date,Description,Merchant,Amount,Account',
+    ...incomeResult.rows.map(r => [fmtDate(r.transaction_date), esc(r.description), esc(r.merchant_name), fmtAmt(r.amount), esc(r.account_name)].join(',')),
+    '',
+    'SECTION 3 - EXPENSE TRANSACTIONS',
+    'Date,Description,Merchant,Amount,Category,Sub-Category,Account',
+    ...expenseResult.rows.map(r => [fmtDate(r.transaction_date), esc(r.description), esc(r.merchant_name), fmtAmt(Math.abs(r.amount)), esc(r.category), esc(r.sub_category), esc(r.account_name)].join(',')),
+  ];
+
+  return '\uFEFF' + rows.join('\r\n');
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
