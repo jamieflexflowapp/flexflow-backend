@@ -237,7 +237,7 @@ router.post('/complete', async (req, res) => {
 
     // Insert 2FA nudge notification
     await query(
-      `INSERT INTO notifications (user_id, alert_type, title, message, is_dismissed)
+      `INSERT INTO notifications (user_id, alert_type, title, body, is_dismissed)
        VALUES ($1, '2fa_nudge', 'Secure your account', 'Enable two-factor authentication to protect your financial data.', false)
        ON CONFLICT DO NOTHING`,
       [req.user.userId]
