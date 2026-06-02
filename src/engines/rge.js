@@ -381,10 +381,26 @@ async function generateMonthlyCSV(userId, year, month) {
   // Tax summary
   const taxYear = getTaxYear(new Date(year, month - 1, 1));
   const taxResult = await query(
-    'SELECT total_tax_liability, tax_pot_target, monthly_tax_pot_contrib FROM tax_calculations WHERE user_id = $1 AND tax_year = $2',
+    'SELECT total_tax_liability, it_total, ni_class2, ni_class4_main, ni_class4_upper, ni_total FROM tax_calculations WHERE user_id = $1 AND tax_year = $2',
     [userId, taxYear]
   );
   const tax = taxResult.rows[0] || {};
+
+  // FYTD income (tax year start to end of this month)
+  const [tyStart] = taxYear.split('/');
+  const fyStart = parseInt(tyStart) + '-04-06';
+  const fytdIncomeResult = await query(
+    'SELECT SUM(amount) as total FROM transactions WHERE user_id = $1 AND is_income = true AND user_confirmed = true AND transaction_date >= $2 AND transaction_date <= $3',
+    [userId, fyStart, monthEnd]
+  );
+  const fytdIncome = parseFloat(fytdIncomeResult.rows[0]?.total || 0);
+
+  // FYTD expenses (tax year start to end of this month)
+  const fytdExpenseResult = await query(
+    'SELECT SUM(ABS(amount)) as total FROM transactions WHERE user_id = $1 AND is_income = false AND user_confirmed = true AND transaction_date >= $2 AND transaction_date <= $3',
+    [userId, fyStart, monthEnd]
+  );
+  const fytdExpenses = parseFloat(fytdExpenseResult.rows[0]?.total || 0);
 
   // Income transactions
   const incomeResult = await query(
@@ -424,11 +440,16 @@ async function generateMonthlyCSV(userId, year, month) {
     '',
     'SECTION 1 - MONTHLY SUMMARY',
     'Field,Amount',
-    'Total Income,' + fmtAmt(totalIncome),
-    'Total Expenses,' + fmtAmt(totalExpenses),
-    'Tax Liability (FYTD),' + fmtAmt(tax.total_tax_liability),
-    'Monthly Tax Contribution,' + fmtAmt(tax.monthly_tax_pot_contrib),
-    'Tax Pot Target,' + fmtAmt(tax.tax_pot_target),
+    'Total Income (FY to Date),' + fmtAmt(fytdIncome),
+    'Total Income (' + new Date(year, month - 1, 1).toLocaleString('en-GB', { month: 'long' }) + '),' + fmtAmt(totalIncome),
+    'Total Expenses (FY to Date),' + fmtAmt(fytdExpenses),
+    'Total Expenses (' + new Date(year, month - 1, 1).toLocaleString('en-GB', { month: 'long' }) + '),' + fmtAmt(totalExpenses),
+    'Income Tax (FY to Date),' + fmtAmt(tax.it_total),
+    'NI Class 2 (FY to Date),' + fmtAmt(tax.ni_class2),
+    'NI Class 4 Main (FY to Date),' + fmtAmt(tax.ni_class4_main),
+    'NI Class 4 Upper (FY to Date),' + fmtAmt(tax.ni_class4_upper),
+    'Total Tax Liability (FY to Date),' + fmtAmt(tax.total_tax_liability),
+
     '',
     'SECTION 2 - INCOME TRANSACTIONS',
     'Date,Description,Merchant,Amount,Account',
