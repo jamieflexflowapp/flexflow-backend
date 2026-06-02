@@ -152,7 +152,7 @@ router.post('/validate', async (req, res) => {
 
     if (!verified) return res.status(400).json({ error: 'Invalid code. Please try again.' });
 
-    const bcrypt = require('bcrypt');
+    const bcrypt = require('bcryptjs');
     const { generateAccessToken, generateRefreshToken } = require('../middleware/authController');
     const accessToken  = generateAccessToken(user.id);
     const refreshToken = generateRefreshToken(user.id);

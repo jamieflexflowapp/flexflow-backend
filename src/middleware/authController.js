@@ -320,6 +320,7 @@ async function login(req, res) {
         process.env.JWT_SECRET,
         { expiresIn: '10m' }
       );
+      console.log("[2FA] Sending requires2fa response, temp_token length:", tempToken.length);
       return res.status(200).json({ requires2fa: true, temp_token: tempToken });
     }
 
