@@ -128,6 +128,7 @@ app.listen(PORT, async () => {
   // Generates report for PREVIOUS month — e.g. runs 1 Jun, covers May
   // Updated from spec (was last day of month) per product decision May 2026
   const { generateMonthlyPDF, generateMonthlyCSV, generateQuarterlyPDF } = require('./engines/rge');
+  const { sendPush } = require('./utils/sendPush');
   const { query: dbQuery } = require('./config/database');
   cron.schedule('0 6 1 * *', async () => {
     console.log('[RGE] Monthly report generation starting...');
@@ -144,6 +145,8 @@ app.listen(PORT, async () => {
         try {
           await generateMonthlyPDF(user.id, year, month);
           await generateMonthlyCSV(user.id, year, month);
+          const monthName = new Date(year, month - 1, 1).toLocaleString('default', { month: 'long' });
+          await sendPush(user.id, 'Your monthly report is ready', `Your ${monthName} ${year} FlexFlow report has been generated.`);
         } catch (err) {
           console.error(`[RGE] Failed for user ${user.id}:`, err.message);
         }
