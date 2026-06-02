@@ -39,7 +39,7 @@ const TL_API_URL = process.env.TRUELAYER_SANDBOX === 'true'
 // ── Plan bank account limit middleware ──────────────────────────────────────
 async function checkBankAccountLimit(req, res, next) {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.userId;
     if (!userId) return next();
 
     const limitResult = await query(
