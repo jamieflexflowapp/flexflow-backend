@@ -578,10 +578,98 @@ async function generateAnnualCSV(userId, taxYear) {
   return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
 }
 
+async function generateLtdMonthlyCSV(userId, year, month) {
+  const monthStart = `${year}-${String(month).padStart(2,'0')}-01`;
+  const lastDay    = new Date(year, month, 0).getDate();
+  const monthEnd   = `${year}-${String(month).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+  const taxYear    = getTaxYear(new Date(year, month - 1, 1));
+  const monthName  = new Date(year, month - 1, 1).toLocaleString('en-GB', { month: 'long', year: 'numeric' });
+
+  const userResult = await query(
+    'SELECT full_name, receives_pension, annual_personal_pension_net, annual_employer_pension_contribution, pension_contribution_frequency FROM users WHERE id = $1',
+    [userId]
+  );
+  const user = userResult.rows[0] || {};
+
+  const ltdTax = (await query(
+    'SELECT * FROM ltd_tax_calculations WHERE user_id = $1 AND tax_year = $2',
+    [userId, taxYear]
+  )).rows[0] || {};
+
+  const incomeResult = await query(
+    `SELECT t.transaction_date, t.description, t.merchant_name, t.amount, bc.account_name
+     FROM transactions t
+     LEFT JOIN bank_connections bc ON bc.id = t.bank_connection_id
+     WHERE t.user_id = $1 AND t.is_income = true AND t.user_confirmed = true
+       AND t.transaction_date >= $2 AND t.transaction_date <= $3
+     ORDER BY t.transaction_date DESC`,
+    [userId, monthStart, monthEnd]
+  );
+
+  const expenseResult = await query(
+    `SELECT t.transaction_date, t.description, t.merchant_name, t.amount, t.category, t.sub_category, bc.account_name
+     FROM transactions t
+     LEFT JOIN bank_connections bc ON bc.id = t.bank_connection_id
+     WHERE t.user_id = $1 AND t.is_income = false AND t.user_confirmed = true
+       AND t.transaction_date >= $2 AND t.transaction_date <= $3
+     ORDER BY t.transaction_date DESC`,
+    [userId, monthStart, monthEnd]
+  );
+
+  const esc = (v) => { const s = String(v ?? ''); return (s.includes(',') || s.includes('"')) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB') : '';
+  const fmtAmt = (n) => parseFloat(n || 0).toFixed(2);
+  const monthLabel = new Date(year, month - 1, 1).toLocaleString('en-GB', { month: 'long' });
+
+  const totalIncome = incomeResult.rows.reduce((s, r) => s + parseFloat(r.amount || 0), 0);
+  const totalExpenses = expenseResult.rows.reduce((s, r) => s + Math.abs(parseFloat(r.amount || 0)), 0);
+
+  const rows = [
+    'FlexFlow - Ltd Director Monthly Report',
+    'Period,' + monthName,
+    'Generated,' + new Date().toLocaleDateString('en-GB'),
+    'Name,' + esc(user.full_name || 'FlexFlow User'),
+    'Tax Year,' + taxYear,
+    '',
+    'SECTION 1 - MONTHLY SUMMARY',
+    'Field,Amount',
+    'Total Income (FY to Date),' + fmtAmt(ltdTax.fytd_turnover),
+    'Total Income (' + monthLabel + '),' + fmtAmt(totalIncome),
+    'Total Expenses (FY to Date),' + fmtAmt(ltdTax.fytd_expenses),
+    'Total Expenses (' + monthLabel + '),' + fmtAmt(totalExpenses),
+    'Director Salary (Annual),' + fmtAmt(ltdTax.director_salary_annual),
+    'Director Salary (Monthly),' + fmtAmt(ltdTax.director_salary_monthly),
+    'Salary Paid (FY to Date),' + fmtAmt(ltdTax.salary_paid_ytd),
+    'Employer NI (FY to Date),' + fmtAmt(ltdTax.employer_ni),
+    'CT Taxable Profit,' + fmtAmt(ltdTax.ct_taxable_profit),
+    'Corporation Tax Reserve,' + fmtAmt(ltdTax.corp_tax_reserve),
+    'Dividend Tax,' + fmtAmt(ltdTax.div_tax),
+    'Total Tax Liability (FY to Date),' + fmtAmt(ltdTax.total_tax_owed),
+    ...(user.receives_pension ? [
+      '',
+      'PENSION',
+      'Personal Pension (annual net),' + fmtAmt(user.annual_personal_pension_net),
+      'Employer Pension (annual),' + fmtAmt(user.annual_employer_pension_contribution),
+      'Contribution Frequency,' + (user.pension_contribution_frequency || 'annual'),
+    ] : []),
+    '',
+    'SECTION 2 - INCOME TRANSACTIONS',
+    'Date,Description,Merchant,Amount,Account',
+    ...incomeResult.rows.map(r => [fmtDate(r.transaction_date), esc(r.description), esc(r.merchant_name), fmtAmt(r.amount), esc(r.account_name)].join(',')),
+    '',
+    'SECTION 3 - EXPENSE TRANSACTIONS',
+    'Date,Description,Merchant,Amount,Category,Sub-Category,Account',
+    ...expenseResult.rows.map(r => [fmtDate(r.transaction_date), esc(r.description), esc(r.merchant_name), fmtAmt(Math.abs(r.amount)), esc(r.category), esc(r.sub_category), esc(r.account_name)].join(',')),
+  ];
+
+  return '\uFEFF' + rows.join('\r\n');
+}
+
 module.exports = {
   generateMonthlyPDF,
   generateAnnualPDF,
   generateMonthlyCSV,
   generateAnnualCSV,
+  generateLtdMonthlyCSV,
   assembleMonthlyData,
 };

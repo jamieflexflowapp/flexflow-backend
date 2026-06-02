@@ -93,6 +93,39 @@ router.get('/summary', async (req, res) => {
 
     const dividendsPaidYtd = 0;
 
+    // Save to ltd_tax_calculations
+    const { query } = require('../config/database');
+    await query(`
+      INSERT INTO ltd_tax_calculations
+        (user_id, tax_year, fytd_turnover, fytd_expenses, director_salary_annual,
+         director_salary_monthly, salary_paid_ytd, employer_ni, ct_taxable_profit,
+         corp_tax_reserve, div_tax, available_for_dividends, dividends_paid_ytd,
+         emp_pension_tytd, total_tax_owed, earnings_post_tax, calculated_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW())
+      ON CONFLICT (user_id, tax_year) DO UPDATE SET
+        fytd_turnover = EXCLUDED.fytd_turnover,
+        fytd_expenses = EXCLUDED.fytd_expenses,
+        director_salary_annual = EXCLUDED.director_salary_annual,
+        director_salary_monthly = EXCLUDED.director_salary_monthly,
+        salary_paid_ytd = EXCLUDED.salary_paid_ytd,
+        employer_ni = EXCLUDED.employer_ni,
+        ct_taxable_profit = EXCLUDED.ct_taxable_profit,
+        corp_tax_reserve = EXCLUDED.corp_tax_reserve,
+        div_tax = EXCLUDED.div_tax,
+        available_for_dividends = EXCLUDED.available_for_dividends,
+        dividends_paid_ytd = EXCLUDED.dividends_paid_ytd,
+        emp_pension_tytd = EXCLUDED.emp_pension_tytd,
+        total_tax_owed = EXCLUDED.total_tax_owed,
+        earnings_post_tax = EXCLUDED.earnings_post_tax,
+        calculated_at = NOW()
+    `, [
+      userId,
+      `${fyYear}/${String(fyYear+1).slice(-2)}`,
+      fytdTurnover, fytdExpenses, dirSalaryAnnual, dirSalaryMonthly,
+      salaryPaidYTD, employerNI, ctTaxableProfit, corpTaxReserve,
+      divTax, availableForDividends, 0, empPensionTYTD, totalTaxOwed, earningsPostTax
+    ]);
+
     res.json({
       fytdTurnover,
       fytdExpenses,

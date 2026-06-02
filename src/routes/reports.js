@@ -3,7 +3,7 @@
 const express = require('express');
 const router  = express.Router();
 const { verifyToken, checkOnboardingComplete } = require('../middleware/auth');
-const { generateMonthlyPDF, generateAnnualPDF, generateMonthlyCSV, generateAnnualCSV } = require('../engines/rge');
+const { generateMonthlyPDF, generateAnnualPDF, generateMonthlyCSV, generateAnnualCSV, generateLtdMonthlyCSV } = require('../engines/rge');
 const { query } = require('../config/database');
 
 let s3 = null;
@@ -61,7 +61,11 @@ router.get('/csv', async (req, res) => {
     const year  = parseInt(req.query.year)  || now.getFullYear();
     const month = parseInt(req.query.month) || now.getMonth() + 1;
     if (month < 1 || month > 12) return res.status(400).json({ error: 'Invalid month.' });
-    const csv = await generateMonthlyCSV(req.user.userId, year, month);
+    const userResult = await query('SELECT income_structure FROM users WHERE id = $1', [req.user.userId]);
+    const isLtd = (userResult.rows[0]?.income_structure || '').includes('ltd');
+    const csv = isLtd
+      ? await generateLtdMonthlyCSV(req.user.userId, year, month)
+      : await generateMonthlyCSV(req.user.userId, year, month);
     const monthName = new Date(year, month-1, 1).toLocaleString('en-GB', { month: 'long' });
     res.setHeader('Content-Type','text/csv');
     res.setHeader('Content-Disposition',`attachment; filename="FlexFlow-Transactions-${monthName}-${year}.csv"`);
