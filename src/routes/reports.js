@@ -62,7 +62,7 @@ router.get('/csv', async (req, res) => {
     const month = parseInt(req.query.month) || now.getMonth() + 1;
     if (month < 1 || month > 12) return res.status(400).json({ error: 'Invalid month.' });
     const userResult = await query('SELECT income_structure FROM users WHERE id = $1', [req.user.userId]);
-    const isLtd = (userResult.rows[0]?.income_structure || '').includes('ltd');
+    const struct = userResult.rows[0]?.income_structure || ''; const isLtd = struct === 'ltd_director' || struct === 'S2';
     const csv = isLtd
       ? await generateLtdMonthlyCSV(req.user.userId, year, month)
       : await generateMonthlyCSV(req.user.userId, year, month);

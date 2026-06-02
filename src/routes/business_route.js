@@ -30,7 +30,7 @@ router.get('/summary', async (req, res) => {
     // Turnover and expenses from real transactions
     const fytdTurnover = parseFloat((await query(
       `SELECT COALESCE(SUM(amount),0) AS t FROM transactions
-       WHERE user_id=$1 AND transaction_type='CREDIT' AND is_income=true AND transaction_date>=$2`,
+       WHERE user_id=$1 AND transaction_type='CREDIT' AND is_income=true AND user_confirmed=true AND transaction_date>=$2`,
       [userId, fyStartStr]
     )).rows[0].t);
 
@@ -94,7 +94,6 @@ router.get('/summary', async (req, res) => {
     const dividendsPaidYtd = 0;
 
     // Save to ltd_tax_calculations
-    const { query } = require('../config/database');
     await query(`
       INSERT INTO ltd_tax_calculations
         (user_id, tax_year, fytd_turnover, fytd_expenses, director_salary_annual,
