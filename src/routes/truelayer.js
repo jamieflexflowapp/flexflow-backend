@@ -140,6 +140,7 @@ router.get('/callback', async (req, res) => {
             access_token = EXCLUDED.access_token,
             refresh_token = EXCLUDED.refresh_token,
             token_expires_at = EXCLUDED.token_expires_at,
+            is_active = true,
             updated_at = NOW()
         `, [
           userId,
@@ -285,7 +286,7 @@ router.get('/accounts', verifyToken, async (req, res) => {
       `SELECT id, account_id, provider, account_name, account_type, currency,
               current_balance, is_tax_account, tax_pot_balance, is_active,
               last_synced_at, sync_status
-       FROM bank_connections WHERE user_id = $1 ORDER BY created_at ASC`,
+       FROM bank_connections WHERE user_id = $1 AND is_active = true ORDER BY created_at ASC`,
       [req.user.userId]
     );
     return res.json({ accounts: result.rows });
