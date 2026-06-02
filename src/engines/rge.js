@@ -560,22 +560,94 @@ async function generateAnnualCSV(userId, taxYear) {
   const startYear = parseInt(startYearStr);
   const fyStart = startYear + '-04-06';
   const fyEnd   = (startYear + 1) + '-04-05';
+  const fmtAmt = (n) => parseFloat(n || 0).toFixed(2);
 
-  const result = await query(
-    'SELECT t.transaction_date, t.description, t.merchant_name, t.amount, t.category, t.sub_category, t.transaction_type, bc.account_name, bc.provider FROM transactions t LEFT JOIN bank_connections bc ON bc.id = t.bank_connection_id WHERE t.user_id = $1 AND t.transaction_date >= $2 AND t.transaction_date <= $3 ORDER BY t.transaction_date DESC',
+  const userResult = await query(
+    'SELECT full_name, income_structure, receives_pension, annual_personal_pension_net, annual_employer_pension_contribution, pension_contribution_frequency FROM users WHERE id = $1',
+    [userId]
+  );
+  const user = userResult.rows[0] || {};
+  const isLtd = user.income_structure === 'ltd_director' || user.income_structure === 'S2';
+
+  // Annual tax summary
+  const taxResult = await query(
+    'SELECT total_tax_liability, it_total, ni_class2, ni_class4_main, ni_class4_upper, gross_se_income FROM tax_calculations WHERE user_id = $1 AND tax_year = $2',
+    [userId, taxYear]
+  );
+  const tax = taxResult.rows[0] || {};
+
+  const ltdTax = isLtd ? (await query(
+    'SELECT corp_tax_reserve, div_tax, employer_ni, total_tax_owed, earnings_post_tax FROM ltd_tax_calculations WHERE user_id = $1 AND tax_year = $2',
+    [userId, taxYear]
+  )).rows[0] || {} : {};
+
+  // Total income and expenses for the year
+  const totalIncomeResult = await query(
+    'SELECT COALESCE(SUM(amount),0) as total FROM transactions WHERE user_id = $1 AND is_income = true AND user_confirmed = true AND transaction_date >= $2 AND transaction_date <= $3',
     [userId, fyStart, fyEnd]
   );
+  const totalExpensesResult = await query(
+    'SELECT COALESCE(SUM(ABS(amount)),0) as total FROM transactions WHERE user_id = $1 AND is_income = false AND user_confirmed = true AND transaction_date >= $2 AND transaction_date <= $3',
+    [userId, fyStart, fyEnd]
+  );
+  const totalIncome = parseFloat(totalIncomeResult.rows[0].total);
+  const totalExpenses = parseFloat(totalExpensesResult.rows[0].total);
 
-  const headers = ['Date','Description','Merchant','Amount','Type','Category','Sub-Category','Account','Provider'];
-  const rows = result.rows.map(r => [
-    r.transaction_date?.toISOString?.()?.split?.('T')[0] || r.transaction_date,
-    '"' + (r.description || '').replace(/"/g, '""') + '"',
-    '"' + (r.merchant_name || '').replace(/"/g, '""') + '"',
-    r.amount, r.transaction_type, r.category, r.sub_category,
-    '"' + (r.account_name || '').replace(/"/g, '""') + '"',
-    r.provider,
-  ]);
-  return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+  // Monthly income breakdown (Apr=4 to Mar=3 next year)
+  const months = [];
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(startYear, 3 + i, 1); // April = month 3
+    const mStart = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2,'0') + '-01';
+    const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    const mEnd = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2,'0') + '-' + String(lastDay).padStart(2,'0');
+    const label = d.toLocaleString('en-GB', { month: 'long', year: 'numeric' });
+
+    const inc = await query(
+      'SELECT COALESCE(SUM(amount),0) as total FROM transactions WHERE user_id = $1 AND is_income = true AND user_confirmed = true AND transaction_date >= $2 AND transaction_date <= $3',
+      [userId, mStart, mEnd]
+    );
+    const exp = await query(
+      'SELECT COALESCE(SUM(ABS(amount)),0) as total FROM transactions WHERE user_id = $1 AND is_income = false AND user_confirmed = true AND transaction_date >= $2 AND transaction_date <= $3',
+      [userId, mStart, mEnd]
+    );
+    months.push({ label, income: parseFloat(inc.rows[0].total), expenses: parseFloat(exp.rows[0].total) });
+  }
+
+  const rows = [
+    'FlexFlow - ' + (isLtd ? 'Ltd Director' : 'Sole Trader') + ' Annual Report',
+    'Tax Year,' + taxYear,
+    'Generated,' + new Date().toLocaleDateString('en-GB'),
+    'Name,' + (user.full_name || 'FlexFlow User'),
+    '',
+    'SECTION 1 - ANNUAL SUMMARY',
+    'Field,Amount',
+    'Total Income (FY to Date),' + fmtAmt(totalIncome),
+    'Total Expenses (FY to Date),' + fmtAmt(totalExpenses),
+    '',
+    isLtd ? 'Corporation Tax Reserve,' + fmtAmt(ltdTax.corp_tax_reserve) : 'Income Tax (FY to Date),' + fmtAmt(tax.it_total),
+    isLtd ? 'Dividend Tax,' + fmtAmt(ltdTax.div_tax) : 'NI Class 2 (FY to Date),' + fmtAmt(tax.ni_class2),
+    isLtd ? 'Employer NI,' + fmtAmt(ltdTax.employer_ni) : 'NI Class 4 Main (FY to Date),' + fmtAmt(tax.ni_class4_main),
+    isLtd ? 'Total Tax Liability (FY to Date),' + fmtAmt(ltdTax.total_tax_owed) : 'NI Class 4 Upper (FY to Date),' + fmtAmt(tax.ni_class4_upper),
+    isLtd ? '' : 'Total Tax Liability (FY to Date),' + fmtAmt(tax.total_tax_liability),
+    isLtd ? 'Post-Tax Earnings (FY to Date),' + fmtAmt(parseFloat(ltdTax.earnings_post_tax || 0)) : 'Post-Tax Earnings (FY to Date),' + fmtAmt(parseFloat(tax.gross_se_income || 0) - parseFloat(tax.total_tax_liability || 0)),
+    ...(user.receives_pension ? [
+      '',
+      'PENSION',
+      'Personal Pension (annual net),' + fmtAmt(user.annual_personal_pension_net),
+      'Employer Pension (annual),' + fmtAmt(user.annual_employer_pension_contribution),
+      'Contribution Frequency,' + (user.pension_contribution_frequency || 'annual'),
+    ] : []),
+    '',
+    'SECTION 2 - MONTHLY INCOME BREAKDOWN',
+    'Month,Income',
+    ...months.map(m => m.label + ',' + fmtAmt(m.income)),
+    '',
+    'SECTION 3 - MONTHLY EXPENSE BREAKDOWN',
+    'Month,Expenses',
+    ...months.map(m => m.label + ',' + fmtAmt(m.expenses)),
+  ];
+
+  return '\uFEFF' + rows.join('\r\n');
 }
 
 async function generateLtdMonthlyCSV(userId, year, month) {
