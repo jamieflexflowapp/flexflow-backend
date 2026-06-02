@@ -9,23 +9,28 @@ const { stripe, PRICES } = require('../config/stripe');
 router.post('/checkout', verifyToken, async (req, res) => {
   try {
     const { plan, interval } = req.body;
-    if (plan === 'free') {
-      await query(`UPDATE users SET plan = 'free', updated_at = NOW() WHERE id = $1`, [req.user.userId]);
-      return res.status(200).json({ plan: 'free', message: 'Plan set to Free.' });
-    }
     if (plan !== 'pro') return res.status(400).json({ error: 'Invalid plan.' });
     const priceId = interval === 'annual' ? PRICES.pro_annual : PRICES.pro_monthly;
-    const result = await query(`SELECT email FROM users WHERE id = $1`, [req.user.userId]);
+    const result = await query(`SELECT email, stripe_customer_id, trial_used FROM users WHERE id = $1`, [req.user.userId]);
     if (!result.rows.length) return res.status(404).json({ error: 'User not found.' });
-    const session = await stripe.checkout.sessions.create({
+    const { email, stripe_customer_id, trial_used } = result.rows[0];
+    const sessionParams = {
       mode: 'subscription',
       payment_method_types: ['card'],
-      customer_email: result.rows[0].email,
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${process.env.APP_URL}/subscription/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url:  `${process.env.APP_URL}/subscription/cancel`,
       metadata: { userId: req.user.userId, plan: 'pro', interval },
-    });
+    };
+    if (stripe_customer_id) {
+      sessionParams.customer = stripe_customer_id;
+    } else {
+      sessionParams.customer_email = email;
+    }
+    if (!trial_used) {
+      sessionParams.subscription_data = { trial_period_days: 30 };
+    }
+    const session = await stripe.checkout.sessions.create(sessionParams);
     return res.status(200).json({ checkoutUrl: session.url, sessionId: session.id });
   } catch (err) {
     console.error('Checkout error:', err);
@@ -74,7 +79,8 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
         const s = event.data.object;
         await query(
           `UPDATE users SET plan = 'pro', stripe_customer_id = $2, stripe_subscription_id = $3,
-           subscription_status = 'active', subscription_cancel_at_period_end = false, updated_at = NOW()
+           subscription_status = 'active', subscription_cancel_at_period_end = false,
+           trial_used = true, updated_at = NOW()
            WHERE id = $1`,
           [s.metadata.userId, s.customer, s.subscription]
         );
@@ -98,7 +104,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
         break;
       case 'customer.subscription.deleted':
         await query(
-          `UPDATE users SET plan = 'free', subscription_status = 'cancelled', stripe_subscription_id = NULL, updated_at = NOW()
+          `UPDATE users SET plan = 'cancelled', subscription_status = 'cancelled', stripe_subscription_id = NULL, updated_at = NOW()
            WHERE stripe_subscription_id = $1`,
           [event.data.object.id]
         );

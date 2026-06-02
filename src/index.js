@@ -138,7 +138,7 @@ app.listen(PORT, async () => {
       const year  = reportDate.getFullYear();
       const month = reportDate.getMonth() + 1;
       const users = await dbQuery(
-        "SELECT id FROM users WHERE plan IN ('plus', 'pro') AND onboarding_complete = true"
+        "SELECT id FROM users WHERE plan = 'pro' AND onboarding_complete = true"
       );
       console.log(`[RGE] Generating for ${users.rows.length} users — ${month}/${year}`);
       for (const user of users.rows) {
