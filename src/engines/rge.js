@@ -374,7 +374,7 @@ async function generateMonthlyCSV(userId, year, month) {
   const lastDay    = new Date(year, month, 0).getDate();
   const monthEnd   = `${year}-${String(month).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
 
-  const userResult = await query('SELECT full_name FROM users WHERE id = $1', [userId]);
+  const userResult = await query('SELECT full_name, receives_pension, annual_personal_pension_net, annual_employer_pension_contribution, pension_contribution_frequency FROM users WHERE id = $1', [userId]);
   const userName = userResult.rows[0]?.full_name || 'FlexFlow User';
   const monthName = new Date(year, month - 1, 1).toLocaleString('en-GB', { month: 'long', year: 'numeric' });
 
@@ -449,6 +449,13 @@ async function generateMonthlyCSV(userId, year, month) {
     'NI Class 4 Main (FY to Date),' + fmtAmt(tax.ni_class4_main),
     'NI Class 4 Upper (FY to Date),' + fmtAmt(tax.ni_class4_upper),
     'Total Tax Liability (FY to Date),' + fmtAmt(tax.total_tax_liability),
+    ...(userResult.rows[0]?.receives_pension ? [
+      '',
+      'PENSION',
+      'Personal Pension (annual net),' + fmtAmt(userResult.rows[0].annual_personal_pension_net),
+      'Employer Pension (annual),' + fmtAmt(userResult.rows[0].annual_employer_pension_contribution),
+      'Contribution Frequency,' + (userResult.rows[0].pension_contribution_frequency || 'annual'),
+    ] : []),
 
     '',
     'SECTION 2 - INCOME TRANSACTIONS',
