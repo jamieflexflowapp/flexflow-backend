@@ -179,6 +179,11 @@ app.listen(PORT, async () => {
       for (const user of users.rows) {
         try {
           await generateQuarterlyPDF(user.id, now.getFullYear(), 'annual');
+          await sendPush(user.id, 'Your annual report is ready', `Your ${taxYear} tax year report has been generated.`);
+          await dbQuery(`INSERT INTO notifications (user_id, alert_type, severity, title, body, dedup_key)
+            VALUES ($1, 'annual_report', 'INFO', 'Annual report ready', $2, $3)
+            ON CONFLICT (user_id, dedup_key) DO NOTHING`,
+            [user.id, `Your ${taxYear} tax year report has been generated and is ready to download.`, `annual_report_${user.id}_${taxYear}`]);
         } catch (err) {
           console.error(`[RGE] Annual failed for user ${user.id}:`, err.message);
         }
