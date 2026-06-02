@@ -288,7 +288,8 @@ async function login(req, res) {
     const result = await query(
       `SELECT id, email, full_name, password_hash, plan, email_verified,
               onboarding_complete, onboarding_step, income_structure,
-              is_scottish_taxpayer, subscription_status
+              is_scottish_taxpayer, subscription_status,
+              two_fa_enabled
        FROM users WHERE email = $1`,
       [email.toLowerCase().trim()]
     );
@@ -311,6 +312,15 @@ async function login(req, res) {
         unverified: true,
         email: user.email,
       });
+    }
+
+    if (user.two_fa_enabled) {
+      const tempToken = jwt.sign(
+        { userId: user.id, type: '2fa_pending' },
+        process.env.JWT_SECRET,
+        { expiresIn: '10m' }
+      );
+      return res.status(200).json({ requires2fa: true, temp_token: tempToken });
     }
 
     const accessToken  = generateAccessToken(user.id);
@@ -509,4 +519,4 @@ async function resetPassword(req, res) {
   }
 }
 
-module.exports = { register, verifyEmail, resendVerification, login, refresh, logout, forgotPassword, resetPassword };
+module.exports = { register, verifyEmail, resendVerification, login, refresh, logout, forgotPassword, resetPassword, generateAccessToken, generateRefreshToken };

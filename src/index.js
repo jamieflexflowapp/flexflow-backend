@@ -74,8 +74,10 @@ app.use('/forecast',    forecastRoutes);
 app.use('/support',     supportRoutes);
 const reportsRoutes         = require('./routes/reports');
 const notificationsRoutes   = require('./routes/notifications');
+const twofaRoutes           = require('./routes/twofa');
 app.use('/reports',        reportsRoutes);
 app.use('/notifications',  notificationsRoutes);
+app.use('/auth/2fa',        twofaRoutes);
 // Session J: Report Generation Engine ✅ — PHASE 3 COMPLETE
 
 // ── Phase 4.5 routes ─────────────────────────────────────────────────────────

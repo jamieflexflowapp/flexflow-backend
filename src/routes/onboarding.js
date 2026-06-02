@@ -235,6 +235,14 @@ router.post('/complete', async (req, res) => {
       [req.user.userId]
     );
 
+    // Insert 2FA nudge notification
+    await query(
+      `INSERT INTO notifications (user_id, alert_type, title, message, is_dismissed)
+       VALUES ($1, '2fa_nudge', 'Secure your account', 'Enable two-factor authentication to protect your financial data.', false)
+       ON CONFLICT DO NOTHING`,
+      [req.user.userId]
+    ).catch(() => {}); // Non-fatal
+
     return res.status(200).json({
       message: 'Onboarding complete. Welcome to FlexFlow.',
       onboarding_complete: true,
