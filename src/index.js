@@ -147,6 +147,10 @@ app.listen(PORT, async () => {
           await generateMonthlyCSV(user.id, year, month);
           const monthName = new Date(year, month - 1, 1).toLocaleString('default', { month: 'long' });
           await sendPush(user.id, 'Your monthly report is ready', `Your ${monthName} ${year} FlexFlow report has been generated.`);
+          await dbQuery(`INSERT INTO notifications (user_id, alert_type, severity, title, body, dedup_key)
+            VALUES ($1, 'monthly_report', 'INFO', 'Monthly report ready', $2, $3)
+            ON CONFLICT (user_id, dedup_key) DO NOTHING`,
+            [user.id, `Your ${monthName} ${year} report has been generated and is ready to download.`, `monthly_report_${user.id}_${year}_${month}`]);
         } catch (err) {
           console.error(`[RGE] Failed for user ${user.id}:`, err.message);
         }

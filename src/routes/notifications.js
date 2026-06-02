@@ -51,3 +51,36 @@ router.get('/preferences', async (req, res) => {
 });
 
 module.exports = router;
+
+// GET /notifications — fetch all undismissed notifications for user
+router.get('/', async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT id, alert_type, severity, title, body, action_url, is_read, is_dismissed, created_at
+       FROM notifications
+       WHERE user_id = $1 AND is_dismissed = false
+       ORDER BY created_at DESC
+       LIMIT 50`,
+      [req.user.userId]
+    );
+    res.json({ notifications: result.rows });
+  } catch (err) {
+    console.error('[NOTIFS GET]', err.message);
+    res.status(500).json({ error: 'Failed to fetch notifications' });
+  }
+});
+
+// DELETE /notifications/:id — dismiss a notification permanently
+router.delete('/:id', async (req, res) => {
+  try {
+    await query(
+      `UPDATE notifications SET is_dismissed = true, dismissed_at = NOW()
+       WHERE id = $1 AND user_id = $2`,
+      [req.params.id, req.user.userId]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[NOTIFS DELETE]', err.message);
+    res.status(500).json({ error: 'Failed to dismiss notification' });
+  }
+});
