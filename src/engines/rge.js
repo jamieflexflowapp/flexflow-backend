@@ -402,6 +402,40 @@ async function generateMonthlyCSV(userId, year, month) {
   );
   const fytdExpenses = parseFloat(fytdExpenseResult.rows[0]?.total || 0);
 
+  // Mileage deduction for this month
+  const mileageMonthResult = await query(
+    'SELECT SUM(miles) as total_miles FROM mileage_log WHERE user_id = $1 AND trip_date >= $2 AND trip_date <= $3',
+    [userId, monthStart, monthEnd]
+  );
+  const mileageMonthMiles = parseFloat(mileageMonthResult.rows[0]?.total_miles || 0);
+  const mileageMonthDeduction = mileageMonthMiles <= 10000
+    ? mileageMonthMiles * 0.45
+    : (10000 * 0.45) + ((mileageMonthMiles - 10000) * 0.25);
+
+  // Mileage deduction FYTD
+  const mileageFYTDResult = await query(
+    'SELECT SUM(miles) as total_miles FROM mileage_log WHERE user_id = $1 AND trip_date >= $2 AND trip_date <= $3',
+    [userId, fyStart, monthEnd]
+  );
+  const mileageFYTDMiles = parseFloat(mileageFYTDResult.rows[0]?.total_miles || 0);
+  const mileageFYTDDeduction = mileageFYTDMiles <= 10000
+    ? mileageFYTDMiles * 0.45
+    : (10000 * 0.45) + ((mileageFYTDMiles - 10000) * 0.25);
+
+  // Home office deduction (monthly flat rate from user hours)
+  const hoursResult = await query('SELECT home_office_hours FROM users WHERE id = $1', [userId]);
+  const hoHours = parseFloat(hoursResult.rows[0]?.home_office_hours || 0);
+  const TIERS = [{min:25,max:50,rate:10},{min:51,max:100,rate:18},{min:101,max:9999,rate:26}];
+  const hoTier = TIERS.find(t => hoHours >= t.min && hoHours <= t.max);
+  const hoMonthly = hoHours >= 25 && hoTier ? hoTier.rate : 0;
+  const hoFYTD = hoMonthly * (Math.floor((new Date(monthEnd) - new Date(fyStart)) / (1000*60*60*24*30.44)) + 1);
+
+  // Mileage trips for this month (detail rows)
+  const mileageTripsResult = await query(
+    'SELECT trip_date, purpose, miles FROM mileage_log WHERE user_id = $1 AND trip_date >= $2 AND trip_date <= $3 ORDER BY trip_date DESC',
+    [userId, monthStart, monthEnd]
+  );
+
   // Income transactions
   const incomeResult = await query(
     `SELECT t.transaction_date, t.description, t.merchant_name, t.amount, bc.account_name
@@ -444,6 +478,12 @@ async function generateMonthlyCSV(userId, year, month) {
     'Total Income (' + new Date(year, month - 1, 1).toLocaleString('en-GB', { month: 'long' }) + '),' + fmtAmt(totalIncome),
     'Total Expenses (FY to Date),' + fmtAmt(fytdExpenses),
     'Total Expenses (' + new Date(year, month - 1, 1).toLocaleString('en-GB', { month: 'long' }) + '),' + fmtAmt(totalExpenses),
+    'Mileage Deduction (' + new Date(year, month - 1, 1).toLocaleString('en-GB', { month: 'long' }) + '),' + fmtAmt(mileageMonthDeduction),
+    'Mileage Deduction (FY to Date),' + fmtAmt(mileageFYTDDeduction),
+    'Home Office Deduction (monthly),' + fmtAmt(hoMonthly),
+    'Home Office Deduction (FY to Date),' + fmtAmt(hoFYTD),
+    'Total Allowable Deductions (' + new Date(year, month - 1, 1).toLocaleString('en-GB', { month: 'long' }) + '),' + fmtAmt(totalExpenses + mileageMonthDeduction + hoMonthly),
+    'Total Allowable Deductions (FY to Date),' + fmtAmt(fytdExpenses + mileageFYTDDeduction + hoFYTD),
     'Income Tax (FY to Date),' + fmtAmt(tax.it_total),
     'NI Class 2 (FY to Date),' + fmtAmt(tax.ni_class2),
     'NI Class 4 Main (FY to Date),' + fmtAmt(tax.ni_class4_main),
@@ -465,6 +505,21 @@ async function generateMonthlyCSV(userId, year, month) {
     'SECTION 3 - EXPENSE TRANSACTIONS',
     'Date,Description,Merchant,Amount,Category,Sub-Category,Account',
     ...expenseResult.rows.map(r => [fmtDate(r.transaction_date), esc(r.description), esc(r.merchant_name), fmtAmt(Math.abs(r.amount)), esc(r.category), esc(r.sub_category), esc(r.account_name)].join(',')),
+    '',
+    'SECTION 4 - ALLOWABLE DEDUCTIONS',
+    '',
+    'Mileage Deduction',
+    'Date,Purpose,Miles,Deduction (£)',
+    ...mileageTripsResult.rows.map(r => {
+      const m = parseFloat(r.miles || 0);
+      const d = m * 0.45;
+      return [fmtDate(r.trip_date), esc(r.purpose), fmtAmt(m), fmtAmt(d)].join(',');
+    }),
+    'Total Mileage This Month,' + fmtAmt(mileageMonthMiles) + ' miles,' + fmtAmt(mileageMonthDeduction),
+    '',
+    'Home Office (Flat Rate)',
+    'Hours/Month,Monthly Deduction (£)',
+    fmtAmt(hoHours) + ',' + fmtAmt(hoMonthly),
   ];
 
   return '\uFEFF' + rows.join('\r\n');
