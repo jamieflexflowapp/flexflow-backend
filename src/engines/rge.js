@@ -404,7 +404,7 @@ async function generateMonthlyCSV(userId, year, month) {
 
   // Mileage deduction for this month
   const mileageMonthResult = await query(
-    'SELECT SUM(miles) as total_miles FROM mileage_log WHERE user_id = $1 AND trip_date >= $2 AND trip_date <= $3',
+    'SELECT SUM(miles) as total_miles FROM mileage_log WHERE user_id = $1 AND journey_date >= $2 AND journey_date <= $3',
     [userId, monthStart, monthEnd]
   );
   const mileageMonthMiles = parseFloat(mileageMonthResult.rows[0]?.total_miles || 0);
@@ -414,7 +414,7 @@ async function generateMonthlyCSV(userId, year, month) {
 
   // Mileage deduction FYTD
   const mileageFYTDResult = await query(
-    'SELECT SUM(miles) as total_miles FROM mileage_log WHERE user_id = $1 AND trip_date >= $2 AND trip_date <= $3',
+    'SELECT SUM(miles) as total_miles FROM mileage_log WHERE user_id = $1 AND journey_date >= $2 AND journey_date <= $3',
     [userId, fyStart, monthEnd]
   );
   const mileageFYTDMiles = parseFloat(mileageFYTDResult.rows[0]?.total_miles || 0);
@@ -422,17 +422,15 @@ async function generateMonthlyCSV(userId, year, month) {
     ? mileageFYTDMiles * 0.45
     : (10000 * 0.45) + ((mileageFYTDMiles - 10000) * 0.25);
 
-  // Home office deduction (monthly flat rate from user hours)
-  const hoursResult = await query('SELECT home_office_hours FROM users WHERE id = $1', [userId]);
-  const hoHours = parseFloat(hoursResult.rows[0]?.home_office_hours || 0);
-  const TIERS = [{min:25,max:50,rate:10},{min:51,max:100,rate:18},{min:101,max:9999,rate:26}];
-  const hoTier = TIERS.find(t => hoHours >= t.min && hoHours <= t.max);
-  const hoMonthly = hoHours >= 25 && hoTier ? hoTier.rate : 0;
+  // Home office deduction (monthly flat rate from home_office_config)
+  const hoursResult = await query('SELECT monthly_hours, monthly_deduction FROM home_office_config WHERE user_id = $1', [userId]);
+  const hoHours = parseFloat(hoursResult.rows[0]?.monthly_hours || 0);
+  const hoMonthly = parseFloat(hoursResult.rows[0]?.monthly_deduction || 0);
   const hoFYTD = hoMonthly * (Math.floor((new Date(monthEnd) - new Date(fyStart)) / (1000*60*60*24*30.44)) + 1);
 
   // Mileage trips for this month (detail rows)
   const mileageTripsResult = await query(
-    'SELECT trip_date, purpose, miles FROM mileage_log WHERE user_id = $1 AND trip_date >= $2 AND trip_date <= $3 ORDER BY trip_date DESC',
+    'SELECT journey_date, purpose, miles FROM mileage_log WHERE user_id = $1 AND journey_date >= $2 AND journey_date <= $3 ORDER BY journey_date DESC',
     [userId, monthStart, monthEnd]
   );
 
@@ -513,7 +511,7 @@ async function generateMonthlyCSV(userId, year, month) {
     ...mileageTripsResult.rows.map(r => {
       const m = parseFloat(r.miles || 0);
       const d = m * 0.45;
-      return [fmtDate(r.trip_date), esc(r.purpose), fmtAmt(m), fmtAmt(d)].join(',');
+      return [fmtDate(r.journey_date), esc(r.purpose), fmtAmt(m), fmtAmt(d)].join(',');
     }),
     'Total Mileage This Month,' + fmtAmt(mileageMonthMiles) + ' miles,' + fmtAmt(mileageMonthDeduction),
     '',
