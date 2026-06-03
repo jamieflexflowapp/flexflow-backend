@@ -93,6 +93,9 @@ app.use('/business',      businessRoutes);
 app.use('/transactions',  transactionRoutes);
 app.use('/designations',  designationRoutes);
 
+const userExportRoutes = require('./routes/user_export');
+app.use('/user', userExportRoutes);
+
 // ── 404 handler ───────────────────────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({ error: 'Route not found' });
