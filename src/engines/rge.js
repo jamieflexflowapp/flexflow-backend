@@ -749,6 +749,40 @@ async function generateLtdMonthlyCSV(userId, year, month) {
   const totalIncome = incomeResult.rows.reduce((s, r) => s + parseFloat(r.amount || 0), 0);
   const totalExpenses = expenseResult.rows.reduce((s, r) => s + Math.abs(parseFloat(r.amount || 0)), 0);
 
+  // Mileage deduction for this month
+  const ltdMileageMonthResult = await query(
+    'SELECT SUM(miles) as total_miles FROM mileage_log WHERE user_id = $1 AND journey_date >= $2 AND journey_date <= $3',
+    [userId, monthStart, monthEnd]
+  );
+  const ltdMileageMonthMiles = parseFloat(ltdMileageMonthResult.rows[0]?.total_miles || 0);
+  const ltdMileageMonthDeduction = ltdMileageMonthMiles <= 10000
+    ? ltdMileageMonthMiles * 0.45
+    : (10000 * 0.45) + ((ltdMileageMonthMiles - 10000) * 0.25);
+
+  // Mileage FYTD
+  const [ltdTyStart] = taxYear.split('/');
+  const ltdFyStart = parseInt(ltdTyStart) + '-04-06';
+  const ltdMileageFYTDResult = await query(
+    'SELECT SUM(miles) as total_miles FROM mileage_log WHERE user_id = $1 AND journey_date >= $2 AND journey_date <= $3',
+    [userId, ltdFyStart, monthEnd]
+  );
+  const ltdMileageFYTDMiles = parseFloat(ltdMileageFYTDResult.rows[0]?.total_miles || 0);
+  const ltdMileageFYTDDeduction = ltdMileageFYTDMiles <= 10000
+    ? ltdMileageFYTDMiles * 0.45
+    : (10000 * 0.45) + ((ltdMileageFYTDMiles - 10000) * 0.25);
+
+  // Home office deduction
+  const ltdHoResult = await query('SELECT monthly_hours, monthly_deduction FROM home_office_config WHERE user_id = $1', [userId]);
+  const ltdHoHours = parseFloat(ltdHoResult.rows[0]?.monthly_hours || 0);
+  const ltdHoMonthly = parseFloat(ltdHoResult.rows[0]?.monthly_deduction || 0);
+  const ltdHoFYTD = ltdHoMonthly * (Math.floor((new Date(monthEnd) - new Date(ltdFyStart)) / (1000*60*60*24*30.44)) + 1);
+
+  // Mileage trips detail
+  const ltdMileageTripsResult = await query(
+    'SELECT journey_date, purpose, miles FROM mileage_log WHERE user_id = $1 AND journey_date >= $2 AND journey_date <= $3 ORDER BY journey_date DESC',
+    [userId, monthStart, monthEnd]
+  );
+
   const rows = [
     'FlexFlow - Ltd Director Monthly Report',
     'Period,' + monthName,
@@ -785,6 +819,27 @@ async function generateLtdMonthlyCSV(userId, year, month) {
     'SECTION 3 - EXPENSE TRANSACTIONS',
     'Date,Description,Merchant,Amount,Category,Sub-Category,Account',
     ...expenseResult.rows.map(r => [fmtDate(r.transaction_date), esc(r.description), esc(r.merchant_name), fmtAmt(Math.abs(r.amount)), esc(r.category), esc(r.sub_category), esc(r.account_name)].join(',')),
+    '',
+    'SECTION 4 - ALLOWABLE DEDUCTIONS',
+    'Mileage Deduction (' + monthLabel + '),' + fmtAmt(ltdMileageMonthDeduction),
+    'Mileage Deduction (FY to Date),' + fmtAmt(ltdMileageFYTDDeduction),
+    'Home Office Deduction (monthly),' + fmtAmt(ltdHoMonthly),
+    'Home Office Deduction (FY to Date),' + fmtAmt(ltdHoFYTD),
+    'Total Allowable Deductions (' + monthLabel + '),' + fmtAmt(totalExpenses + ltdMileageMonthDeduction + ltdHoMonthly),
+    'Total Allowable Deductions (FY to Date),' + fmtAmt(totalExpenses + ltdMileageFYTDDeduction + ltdHoFYTD),
+    '',
+    'Mileage Trips',
+    'Date,Purpose,Miles,Deduction (£)',
+    ...ltdMileageTripsResult.rows.map(r => {
+      const m = parseFloat(r.miles || 0);
+      const d = m * 0.45;
+      return [fmtDate(r.journey_date), esc(r.purpose), fmtAmt(m), fmtAmt(d)].join(',');
+    }),
+    'Total Mileage This Month,' + fmtAmt(ltdMileageMonthMiles) + ' miles,' + fmtAmt(ltdMileageMonthDeduction),
+    '',
+    'Home Office (Flat Rate)',
+    'Hours/Month,Monthly Deduction (£)',
+    fmtAmt(ltdHoHours) + ',' + fmtAmt(ltdHoMonthly),
   ];
 
   return '\uFEFF' + rows.join('\r\n');
