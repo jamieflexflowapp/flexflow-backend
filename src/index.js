@@ -213,30 +213,4 @@ setInterval(async () => {
   } catch (err) {
     console.error('[Cleanup] Error:', err.message);
   }
-
-// Nightly 6-year retention purge — runs 02:00 every night
-// Hard deletes anonymised financial records for accounts deleted more than 6 years ago
-const cronLib = require('node-cron');
-cronLib.schedule('0 2 * * *', async () => {
-  try {
-    const expiredUsers = await dbQuery(
-      "SELECT id FROM users WHERE deleted_at IS NOT NULL AND deleted_at < NOW() - INTERVAL '6 years'"
-    );
-    if (expiredUsers.rows.length === 0) return;
-    for (const row of expiredUsers.rows) {
-      const uid = row.id;
-      const purgeables = [
-        'transactions', 'tax_calculations', 'committed_bills',
-        'income_events', 'expense_categories', 'runway_snapshots',
-      ];
-      for (const table of purgeables) {
-        try { await dbQuery(`DELETE FROM ${table} WHERE user_id = $1`, [uid]); } catch(e) {}
-      }
-      await dbQuery('DELETE FROM users WHERE id = $1', [uid]);
-    }
-    console.log(`[Retention] Hard deleted ${expiredUsers.rows.length} account(s) past 6-year retention window`);
-  } catch (err) {
-    console.error('[Retention] Purge error:', err.message);
-  }
-});
 }, 1000 * 60 * 60 * 24); // every 24 hours
