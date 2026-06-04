@@ -50,44 +50,51 @@ router.get('/me', verifyToken, async (req, res) => {
 
 // DELETE /auth/account
 router.delete('/account', verifyToken, async (req, res) => {
-  console.log('[DELETE] endpoint hit, body:', JSON.stringify(req.body), 'user:', req.user?.userId);
   try {
     const userId = req.user.userId;
     const { password, reason, otherReason } = req.body;
 
     if (!password) return res.status(400).json({ error: 'Password required' });
 
-    const userResult = await query(`SELECT email, password_hash FROM users WHERE id = $1`, [userId]);
+    const userResult = await query(`SELECT email, password_hash, full_name FROM users WHERE id = $1`, [userId]);
     if (!userResult.rows[0]) return res.status(404).json({ error: 'User not found' });
-    const { email, password_hash } = userResult.rows[0];
+    const { email, password_hash, full_name } = userResult.rows[0];
 
     const valid = await bcrypt.compare(password, password_hash);
     if (!valid) return res.status(401).json({ error: 'Incorrect password' });
 
-    const tables = [
-      'notifications', 'account_designations', 'committed_bills',
-      'transactions', 'bank_connections', 'income_events',
-      'tax_calculations', 'tax_verification', 'quarterly_review_log',
-      'expense_categories', 'user_sessions',
+    // --- HARD DELETE: sensitive/personal tables ---
+    const hardDeleteTables = [
+      'notifications', 'account_designations', 'bank_connections',
+      'tax_verification', 'quarterly_review_log', 'user_sessions',
+      'home_office_config', 'mileage_log',
     ];
-    for (const table of tables) {
+    for (const table of hardDeleteTables) {
       try { await query(`DELETE FROM ${table} WHERE user_id = $1`, [userId]); } catch(e) {}
     }
-    await query(`DELETE FROM users WHERE id = $1`, [userId]);
 
-    // Verify deletion before sending email
-    const verifyResult = await query(`SELECT id FROM users WHERE id = $1`, [userId]);
-    if (verifyResult.rows.length > 0) {
-      return res.status(500).json({ error: 'Account deletion could not be verified' });
-    }
+    // --- ANONYMISE user record — keep for 6-year retention ---
+    const anonEmail = 'deleted_' + userId + '@deleted.flexflow';
+    await query(
+      `UPDATE users SET
+        full_name = 'Deleted User',
+        email = $2,
+        password_hash = 'DELETED',
+        totp_secret = NULL,
+        two_fa_enabled = false,
+        email_verified = false,
+        deleted_at = NOW()
+       WHERE id = $1`,
+      [userId, anonEmail]
+    );
 
     const deletedAt = new Date().toLocaleString('en-GB', { timeZone: 'Europe/London' });
     const reasonText = reason === 'Other' ? (otherReason || 'Other') : (reason || 'Not provided');
     await sendEmail({
       to: 'jamie@flexflowapp.co.uk',
       subject: `FlexFlow — Account Deleted: ${email}`,
-      text: `A FlexFlow account has been deleted.\n\nEmail: ${email}\nUser ID: ${userId}\nReason: ${reasonText}\nDeleted at: ${deletedAt} (London time)\n\nThis is an automated notification.`,
-      html: `<h2>FlexFlow Account Deletion</h2><table><tr><td><b>Email:</b></td><td>${email}</td></tr><tr><td><b>User ID:</b></td><td>${userId}</td></tr><tr><td><b>Reason:</b></td><td>${reasonText}</td></tr><tr><td><b>Deleted at:</b></td><td>${deletedAt} (London time)</td></tr></table>`,
+      text: `A FlexFlow account has been deleted.\n\nEmail: ${email}\nName: ${full_name}\nUser ID: ${userId}\nReason: ${reasonText}\nDeleted at: ${deletedAt} (London time)\n\nPersonal data anonymised. Financial records retained for 6 years.\n\nThis is an automated notification.`,
+      html: `<h2>FlexFlow Account Deletion</h2><table><tr><td><b>Email:</b></td><td>${email}</td></tr><tr><td><b>Name:</b></td><td>${full_name}</td></tr><tr><td><b>User ID:</b></td><td>${userId}</td></tr><tr><td><b>Reason:</b></td><td>${reasonText}</td></tr><tr><td><b>Deleted at:</b></td><td>${deletedAt} (London time)</td></tr></table><p>Personal data anonymised. Financial records retained for 6 years per retention policy.</p>`,
     }).catch(e => console.warn('[DELETE] Email notify failed:', e.message));
 
     res.json({ success: true });
