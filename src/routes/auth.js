@@ -50,44 +50,89 @@ router.get('/me', verifyToken, async (req, res) => {
 
 // DELETE /auth/account
 router.delete('/account', verifyToken, async (req, res) => {
-  console.log('[DELETE] endpoint hit, body:', JSON.stringify(req.body), 'user:', req.user?.userId);
   try {
     const userId = req.user.userId;
     const { password, reason, otherReason } = req.body;
 
     if (!password) return res.status(400).json({ error: 'Password required' });
 
-    const userResult = await query(`SELECT email, password_hash FROM users WHERE id = $1`, [userId]);
+    const userResult = await query(`SELECT email, password_hash, full_name, income_structure, tax_code, is_scottish_taxpayer, plan, created_at FROM users WHERE id = $1`, [userId]);
     if (!userResult.rows[0]) return res.status(404).json({ error: 'User not found' });
-    const { email, password_hash } = userResult.rows[0];
+    const { email, password_hash, full_name, income_structure, tax_code, is_scottish_taxpayer, plan, created_at } = userResult.rows[0];
 
     const valid = await bcrypt.compare(password, password_hash);
     if (!valid) return res.status(401).json({ error: 'Incorrect password' });
 
-    const tables = [
-      'notifications', 'account_designations', 'committed_bills',
-      'transactions', 'bank_connections', 'income_events',
-      'tax_calculations', 'tax_verification', 'quarterly_review_log',
-      'expense_categories', 'user_sessions',
-    ];
-    for (const table of tables) {
-      try { await query(`DELETE FROM ${table} WHERE user_id = $1`, [userId]); } catch(e) {}
-    }
+    const reasonText = reason === 'Other' ? (otherReason || 'Other') : (reason || 'Not provided');
+
+    // --- STEP 1: Copy to archive schema ---
+    // Archive user record (anonymised — no name or email)
+    await query(
+      `INSERT INTO archive.users (original_user_id, deletion_date, deletion_reason, income_structure, tax_code, is_scottish_taxpayer, plan, created_at)
+       VALUES ($1, NOW(), $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (original_user_id) DO NOTHING`,
+      [userId, reasonText, income_structure, tax_code, is_scottish_taxpayer, plan, created_at]
+    );
+
+    // Archive transactions
+    await query(
+      `INSERT INTO archive.transactions (id, original_user_id, transaction_date, description, merchant_name, amount, is_income, user_confirmed, category, sub_category, created_at)
+       SELECT id, user_id, transaction_date, description, merchant_name, amount, is_income, user_confirmed, category, sub_category, created_at
+       FROM transactions WHERE user_id = $1`,
+      [userId]
+    );
+
+    // Archive tax calculations
+    await query(
+      `INSERT INTO archive.tax_calculations (original_user_id, tax_year, gross_se_income, gross_paye_income, gross_dividend_income, total_tax_liability, it_total, ni_total, calculated_at)
+       SELECT user_id, tax_year, gross_se_income, gross_paye_income, gross_dividend_income, total_tax_liability, it_total, ni_total, calculated_at
+       FROM tax_calculations WHERE user_id = $1`,
+      [userId]
+    );
+
+    // Archive committed bills
+    await query(
+      `INSERT INTO archive.committed_bills (original_user_id, name, amount, day_of_month, source, created_at)
+       SELECT user_id, name, amount, day_of_month, source, created_at
+       FROM committed_bills WHERE user_id = $1`,
+      [userId]
+    );
+
+    // Archive mileage log
+    await query(
+      `INSERT INTO archive.mileage_log (original_user_id, journey_date, purpose, miles, tax_year, created_at)
+       SELECT user_id, journey_date, purpose, miles, tax_year, created_at
+       FROM mileage_log WHERE user_id = $1`,
+      [userId]
+    );
+
+    // Archive home office config
+    await query(
+      `INSERT INTO archive.home_office_config (original_user_id, monthly_hours, method, monthly_deduction, annual_deduction)
+       SELECT user_id, monthly_hours, method, monthly_deduction, annual_deduction
+       FROM home_office_config WHERE user_id = $1
+       ON CONFLICT (original_user_id) DO NOTHING`,
+      [userId]
+    );
+
+    // Archive runway snapshots
+    await query(
+      `INSERT INTO archive.runway_snapshots (original_user_id, snapshot_date, bank_balance, available_balance, runway_weeks, runway_status, created_at)
+       SELECT user_id, snapshot_date, bank_balance, available_balance, runway_weeks, runway_status, snapshot_date
+       FROM runway_snapshots WHERE user_id = $1`,
+      [userId]
+    );
+
+    // --- STEP 2: Hard delete from live DB (CASCADE handles related tables) ---
     await query(`DELETE FROM users WHERE id = $1`, [userId]);
 
-    // Verify deletion before sending email
-    const verifyResult = await query(`SELECT id FROM users WHERE id = $1`, [userId]);
-    if (verifyResult.rows.length > 0) {
-      return res.status(500).json({ error: 'Account deletion could not be verified' });
-    }
-
+    // --- STEP 3: Send notification email ---
     const deletedAt = new Date().toLocaleString('en-GB', { timeZone: 'Europe/London' });
-    const reasonText = reason === 'Other' ? (otherReason || 'Other') : (reason || 'Not provided');
     await sendEmail({
       to: 'jamie@flexflowapp.co.uk',
       subject: `FlexFlow — Account Deleted: ${email}`,
-      text: `A FlexFlow account has been deleted.\n\nEmail: ${email}\nUser ID: ${userId}\nReason: ${reasonText}\nDeleted at: ${deletedAt} (London time)\n\nThis is an automated notification.`,
-      html: `<h2>FlexFlow Account Deletion</h2><table><tr><td><b>Email:</b></td><td>${email}</td></tr><tr><td><b>User ID:</b></td><td>${userId}</td></tr><tr><td><b>Reason:</b></td><td>${reasonText}</td></tr><tr><td><b>Deleted at:</b></td><td>${deletedAt} (London time)</td></tr></table>`,
+      text: `A FlexFlow account has been deleted.\n\nEmail: ${email}\nName: ${full_name}\nUser ID: ${userId}\nReason: ${reasonText}\nDeleted at: ${deletedAt} (London time)\n\nData archived for 6-year retention. Live account permanently deleted.`,
+      html: `<h2>FlexFlow Account Deletion</h2><table><tr><td><b>Email:</b></td><td>${email}</td></tr><tr><td><b>Name:</b></td><td>${full_name}</td></tr><tr><td><b>User ID:</b></td><td>${userId}</td></tr><tr><td><b>Reason:</b></td><td>${reasonText}</td></tr><tr><td><b>Deleted at:</b></td><td>${deletedAt} (London time)</td></tr></table><p>Data archived for 6-year retention. Live account permanently deleted.</p>`,
     }).catch(e => console.warn('[DELETE] Email notify failed:', e.message));
 
     res.json({ success: true });

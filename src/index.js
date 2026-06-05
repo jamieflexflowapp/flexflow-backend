@@ -213,4 +213,29 @@ setInterval(async () => {
   } catch (err) {
     console.error('[Cleanup] Error:', err.message);
   }
+
+// Nightly 6-year archive purge — runs 03:00 every night
+// Deletes archived records for accounts deleted more than 6 years ago
+const cronLib = require('node-cron');
+cronLib.schedule('0 3 * * *', async () => {
+  try {
+    const expired = await dbQuery(
+      "SELECT original_user_id FROM archive.users WHERE deletion_date < NOW() - INTERVAL '6 years'"
+    );
+    if (expired.rows.length === 0) return;
+    for (const row of expired.rows) {
+      const uid = row.original_user_id;
+      await dbQuery('DELETE FROM archive.transactions WHERE original_user_id = $1', [uid]);
+      await dbQuery('DELETE FROM archive.tax_calculations WHERE original_user_id = $1', [uid]);
+      await dbQuery('DELETE FROM archive.committed_bills WHERE original_user_id = $1', [uid]);
+      await dbQuery('DELETE FROM archive.mileage_log WHERE original_user_id = $1', [uid]);
+      await dbQuery('DELETE FROM archive.home_office_config WHERE original_user_id = $1', [uid]);
+      await dbQuery('DELETE FROM archive.runway_snapshots WHERE original_user_id = $1', [uid]);
+      await dbQuery('DELETE FROM archive.users WHERE original_user_id = $1', [uid]);
+    }
+    console.log(`[Archive Purge] Permanently deleted ${expired.rows.length} account(s) past 6-year retention window`);
+  } catch (err) {
+    console.error('[Archive Purge] Error:', err.message);
+  }
+});
 }, 1000 * 60 * 60 * 24); // every 24 hours
