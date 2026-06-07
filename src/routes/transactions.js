@@ -310,7 +310,9 @@ router.patch('/:id/confirm-income', async (req, res) => {
 
       if (txn) {
         const txDate = new Date(txn.transaction_date);
-        const taxYear = txDate >= new Date('2026-04-06') ? '2026/27' : '2025/26';
+        const fyYear = (txDate.getMonth() > 3 || (txDate.getMonth() === 3 && txDate.getDate() >= 6))
+          ? txDate.getFullYear() : txDate.getFullYear() - 1;
+        const taxYear = `${fyYear}/${String(fyYear + 1).slice(-2)}`;
 
         // Upsert into income_events
         await query(
