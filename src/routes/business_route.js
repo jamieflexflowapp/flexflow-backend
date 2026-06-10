@@ -10,7 +10,7 @@ router.get('/summary', async (req, res) => {
   try {
     const userId = req.user.userId;
     const u = (await query(
-      `SELECT director_salary_annual, dividend_frequency, is_scottish_taxpayer, annual_employer_pension_contribution, receives_pension FROM users WHERE id = $1`,
+      `SELECT director_salary_annual, dividend_frequency, is_scottish_taxpayer, annual_employer_pension_contribution, receives_pension, COALESCE(tax_code, '1257L') AS tax_code FROM users WHERE id = $1`,
       [userId]
     )).rows[0];
     if (!u) return res.status(404).json({ error: 'User not found' });
@@ -72,8 +72,17 @@ router.get('/summary', async (req, res) => {
     const availableForDividends = Math.max(0, Math.round((ctTaxableProfit - corpTaxReserve) * 100) / 100);
 
     // Dividend tax (2026/27: 10.75% basic, £500 allowance)
-    // Personal allowance unused by salary offsets dividend income first
-    const personalAllowance = 12570;
+    // Personal allowance derived from user's tax code — not hardcoded
+    const rawTaxCode = (u.tax_code || '1257L').toUpperCase().trim();
+    let personalAllowance = 12570;
+    if (rawTaxCode === 'NT') personalAllowance = 999999;
+    else if (rawTaxCode === 'BR' || rawTaxCode === 'D0' || rawTaxCode === 'D1') personalAllowance = 0;
+    else if (rawTaxCode.startsWith('K')) personalAllowance = -(parseInt(rawTaxCode.slice(1)) || 0) * 10;
+    else {
+      const stripped = rawTaxCode.replace(/^[SC]/, '').replace(/[A-Z]+$/, '');
+      const codeNum = parseInt(stripped);
+      if (!isNaN(codeNum)) personalAllowance = codeNum * 10;
+    }
     const unusedPersonalAllowance = Math.max(0, personalAllowance - dirSalaryAnnual);
     const divAllowance = 500;
     const taxableDivs = Math.max(0, availableForDividends - unusedPersonalAllowance - divAllowance);

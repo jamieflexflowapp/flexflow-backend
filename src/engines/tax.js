@@ -166,13 +166,13 @@ function calcScottishIncomeTax(taxableNonDivIncome, rates, bandExtension = 0) {
 // It extends both the basic rate band top and the higher rate threshold,
 // delivering pension relief on the dividend tax portion.
 
-function calcDividendTax(dividendIncome, nonDivTaxableIncome, rates, bandExtension = 0) {
+function calcDividendTax(dividendIncome, nonDivTaxableIncome, rates, bandExtension = 0, effectivePA = null) {
   if (dividendIncome <= 0) return { tax: 0, breakdown: [] };
 
   const divAllowance = rates.dividend_allowance || 500;
   const brt          = (rates.basic_rate_threshold  || 50270)  + bandExtension;  // extended
   const hrt          = (rates.higher_rate_threshold || 125140) + bandExtension;  // extended
-  const pa           = rates.personal_allowance    || 12570;
+  const pa           = effectivePA !== null ? effectivePA : (rates.personal_allowance || 12570);
 
   // Dividends sit on top of non-div income
   // The allowance occupies band space at 0% — critical rule
@@ -462,7 +462,7 @@ async function calculateTaxLiability(userId, taxYear = '2026/27') {
   }
 
   // Dividend tax (UK-wide even for Scottish taxpayers) — with band extension
-  const divResult = calcDividendTax(grossDividends, taxableNonDiv, rates, bandExtension);
+  const divResult = calcDividendTax(grossDividends, taxableNonDiv, rates, bandExtension, effectivePA);
   const itDividends = divResult.tax;
 
   // ────────────────────────────────────────────────────────────────────────
@@ -473,7 +473,7 @@ async function calculateTaxLiability(userId, taxYear = '2026/27') {
   const itNonDivBaseline = user.is_scottish_taxpayer
     ? calcScottishIncomeTax(taxableNonDivBaseline, rates, 0).tax
     : calcUKIncomeTax(taxableNonDivBaseline, rates, 0);
-  const itDividendsBaseline = calcDividendTax(grossDividends, taxableNonDivBaseline, rates, 0).tax;
+  const itDividendsBaseline = calcDividendTax(grossDividends, taxableNonDivBaseline, rates, 0, effectivePABaseline).tax;
   const incomeTaxSavingFromPension = Math.round(
     ((itNonDivBaseline + itDividendsBaseline) - (itNonDiv + itDividends)) * 100
   ) / 100;
