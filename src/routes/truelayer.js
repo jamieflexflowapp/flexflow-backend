@@ -75,7 +75,7 @@ router.get('/connect', verifyToken, checkBankAccountLimit, async (req, res) => {
   const params = new URLSearchParams({
     response_type: 'code',
     client_id:     process.env.TRUELAYER_CLIENT_ID,
-    scope:         'info accounts balance cards transactions direct_debits standing_orders offline_access',
+    scope:         'info accounts balance cards transactions offline_access',
     redirect_uri:  process.env.TRUELAYER_REDIRECT_URI,
     providers:     process.env.TRUELAYER_SANDBOX === 'true' ? 'mock' : 'uk-ob-all uk-oauth-all',
     state:         req.user.userId, // Pass userId through OAuth flow
