@@ -30,6 +30,21 @@ router.get('/liability', async (req, res) => {
     // Always recalculate fresh so data reflects latest confirmed transactions
     const r = await calculateTaxLiability(req.user.userId, taxYear);
 
+    // confirmedFytdTotal — single source of truth for pre-tax income display
+    // Reads directly from transactions table (same source as income page)
+    const now = new Date();
+    const fyYear = (now.getMonth() > 3 || (now.getMonth() === 3 && now.getDate() >= 6))
+      ? now.getFullYear() : now.getFullYear() - 1;
+    const fyStart = `${fyYear}-04-06`;
+    const confirmedResult = await query(
+      `SELECT COALESCE(SUM(amount), 0) as total FROM transactions
+       WHERE user_id = $1 AND transaction_type = 'CREDIT'
+         AND transaction_date >= $2
+         AND is_income = true AND user_confirmed = true`,
+      [req.user.userId, fyStart]
+    );
+    const confirmedFytdTotal = parseFloat(confirmedResult.rows[0]?.total) || 0;
+
     return res.json({
       // Original field names
       taxYear:          r.tax_year,
@@ -51,7 +66,7 @@ router.get('/liability', async (req, res) => {
       mtdRequired:      r.mtd_required      || false,
       calculatedAt:     r.calculated_at,
       // camelCase aliases expected by frontend TaxScreen
-      grossIncomeYtd:              (r.gross_se_raw || r.gross_se || 0) + (r.gross_paye || 0),
+      confirmedFytdTotal,
       taxableProfit:               (r.gross_se || 0) + (r.gross_paye || 0),
       incomeTaxDue:                r.it_total          || 0,
       class4NiDue:                 r.ni_class4         || 0,
