@@ -134,12 +134,15 @@ router.get('/callback', async (req, res) => {
         await client.query(`
           INSERT INTO bank_connections
             (user_id, provider, provider_id, account_id, account_type,
-             account_name, currency, access_token, refresh_token, token_expires_at)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+             account_name, currency, access_token, refresh_token, token_expires_at,
+             consent_granted_at, consent_expires_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW() + INTERVAL '90 days')
           ON CONFLICT (user_id, account_id) DO UPDATE SET
             access_token = EXCLUDED.access_token,
             refresh_token = EXCLUDED.refresh_token,
             token_expires_at = EXCLUDED.token_expires_at,
+            consent_granted_at = NOW(),
+            consent_expires_at = NOW() + INTERVAL '90 days',
             is_active = true,
             updated_at = NOW()
         `, [
@@ -740,6 +743,40 @@ router.get('/balances', verifyToken, async (req, res) => {
   } catch (err) {
     console.error('Balances error:', err.message);
     return res.status(500).json({ error: 'Failed to fetch balances.' });
+  }
+});
+
+// ── GET /truelayer/consent-status — returns consent expiry info per connection ──
+router.get('/consent-status', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { rows } = await query(`
+      SELECT id, provider, account_name, consent_granted_at, consent_expires_at,
+             EXTRACT(DAY FROM (consent_expires_at - NOW())) AS days_remaining
+      FROM bank_connections
+      WHERE user_id = $1 AND is_active = true
+      GROUP BY id, provider, account_name, consent_granted_at, consent_expires_at
+      ORDER BY consent_expires_at ASC
+    `, [userId]);
+
+    const connections = rows.map(r => ({
+      id:               r.id,
+      provider:         r.provider,
+      accountName:      r.account_name,
+      consentGrantedAt: r.consent_granted_at,
+      consentExpiresAt: r.consent_expires_at,
+      daysRemaining:    Math.max(0, Math.floor(parseFloat(r.days_remaining) || 0)),
+      isExpiringSoon:   parseFloat(r.days_remaining) <= 7,
+      isExpired:        parseFloat(r.days_remaining) <= 0,
+    }));
+
+    const hasExpiring = connections.some(c => c.isExpiringSoon);
+    const hasExpired  = connections.some(c => c.isExpired);
+
+    return res.json({ connections, hasExpiring, hasExpired });
+  } catch (err) {
+    console.error('Consent status error:', err.message);
+    return res.status(500).json({ error: 'Failed to fetch consent status.' });
   }
 });
 

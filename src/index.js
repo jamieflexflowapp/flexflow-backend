@@ -214,6 +214,7 @@ module.exports = app;
 
 // Nightly cleanup — delete unverified accounts older than 24 hours
 const { query: dbQuery } = require('./config/database');
+const cronLib = require('node-cron');
 setInterval(async () => {
   try {
     const r = await dbQuery(
@@ -226,7 +227,6 @@ setInterval(async () => {
 
 // Nightly 6-year archive purge — runs 03:00 every night
 // Deletes archived records for accounts deleted more than 6 years ago
-const cronLib = require('node-cron');
 cronLib.schedule('0 3 * * *', async () => {
   try {
     const expired = await dbQuery(
@@ -249,3 +249,46 @@ cronLib.schedule('0 3 * * *', async () => {
   }
 });
 }, 1000 * 60 * 60 * 24); // every 24 hours
+
+// ── Consent expiry cron — runs 09:00 daily ────────────────────────────────────
+// Inserts a consent_expiring notification for any user whose AIS consent
+// expires within 7 days and hasn't already received one this expiry cycle.
+cronLib.schedule('0 9 * * *', async () => {
+  try {
+    const { rows } = await dbQuery(`
+      SELECT DISTINCT ON (user_id) user_id, account_name, consent_expires_at,
+             EXTRACT(DAY FROM (consent_expires_at - NOW())) AS days_remaining
+      FROM bank_connections
+      WHERE is_active = true
+        AND consent_expires_at IS NOT NULL
+        AND consent_expires_at > NOW()
+        AND consent_expires_at <= NOW() + INTERVAL '7 days'
+        AND NOT EXISTS (
+          SELECT 1 FROM notifications n
+          WHERE n.user_id = bank_connections.user_id
+            AND n.alert_type = 'consent_expiring'
+            AND n.created_at > NOW() - INTERVAL '7 days'
+        )
+      ORDER BY user_id, consent_expires_at ASC
+    `);
+
+    for (const row of rows) {
+      const days = Math.max(0, Math.floor(parseFloat(row.days_remaining)));
+      const expDate = new Date(row.consent_expires_at).toLocaleDateString('en-GB', {
+        day: 'numeric', month: 'short', year: 'numeric'
+      });
+      await dbQuery(`
+        INSERT INTO notifications (user_id, alert_type, severity, title, body, is_read, is_dismissed)
+        VALUES ($1, 'consent_expiring', 'WARNING',
+          'Bank connection expiring soon',
+          $2, false, false)
+      `, [
+        row.user_id,
+        `Your bank access expires in ${days} day${days === 1 ? '' : 's'} (${expDate}). Tap to re-connect and maintain your FlexFlow calculations.`
+      ]);
+    }
+    if (rows.length > 0) console.log(`[Consent Cron] Sent expiry notifications to ${rows.length} user(s)`);
+  } catch (err) {
+    console.error('[Consent Cron] Error:', err.message);
+  }
+});
