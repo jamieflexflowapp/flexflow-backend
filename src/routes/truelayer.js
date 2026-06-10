@@ -538,15 +538,44 @@ async function refreshAccessToken(userId, accountId) {
   }
 
   // Refresh the token
-  const tokenResponse = await axios.post(`${TL_AUTH_URL}/connect/token`,
-    new URLSearchParams({
-      grant_type:    'refresh_token',
-      client_id:     process.env.TRUELAYER_CLIENT_ID,
-      client_secret: process.env.TRUELAYER_CLIENT_SECRET,
-      refresh_token: conn.refresh_token,
-    }).toString(),
-    { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-  );
+  let tokenResponse;
+  try {
+    tokenResponse = await axios.post(`${TL_AUTH_URL}/connect/token`,
+      new URLSearchParams({
+        grant_type:    'refresh_token',
+        client_id:     process.env.TRUELAYER_CLIENT_ID,
+        client_secret: process.env.TRUELAYER_CLIENT_SECRET,
+        refresh_token: conn.refresh_token,
+      }).toString(),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
+  } catch (err) {
+    const status = err?.response?.status;
+    if (status === 400 || status === 401) {
+      // Consent expired or revoked — mark connection inactive and notify user
+      await query(
+        `UPDATE bank_connections SET is_active = false, updated_at = NOW()
+         WHERE user_id = $1 AND account_id = $2`,
+        [userId, accountId]
+      );
+      // Insert re-consent notification (avoid duplicates)
+      await query(
+        `INSERT INTO notifications (user_id, alert_type, severity, title, body)
+         SELECT $1, 'consent_expiring', 'WARNING',
+           'Bank connection disconnected',
+           'Your bank connection has expired. Tap to re-connect and keep your FlexFlow data up to date.'
+         WHERE NOT EXISTS (
+           SELECT 1 FROM notifications
+           WHERE user_id = $1 AND alert_type = 'consent_expiring'
+             AND is_dismissed = false
+             AND created_at > NOW() - INTERVAL '1 day'
+         )`,
+        [userId]
+      );
+      console.log(`[TOKEN EXPIRED] Connection marked inactive for user ${userId} account ${accountId}`);
+    }
+    throw err;
+  }
 
   const { access_token, refresh_token, expires_in } = tokenResponse.data;
   const newExpiry = new Date(Date.now() + expires_in * 1000);
@@ -574,6 +603,7 @@ router.get('/status', verifyToken, async (req, res) => {
     const result = await query(
       `SELECT
          COUNT(*) FILTER (WHERE is_active = true)                          AS connected_count,
+         COUNT(*) FILTER (WHERE is_active = false)                         AS inactive_count,
          MAX(last_synced_at)                                                AS last_synced,
          COUNT(*) FILTER (WHERE is_active = true AND sync_status = 'error') AS error_count,
          BOOL_OR(is_active = true AND is_tax_account = true)               AS has_tax_account
@@ -585,12 +615,15 @@ router.get('/status', verifyToken, async (req, res) => {
     const row = result.rows[0];
     const connectedCount = parseInt(row.connected_count) || 0;
 
+    const inactiveCount = parseInt(row.inactive_count) || 0;
     return res.json({
-      connected:         connectedCount > 0,
-      connected_count:   connectedCount,
-      last_synced:       row.last_synced || null,
-      has_tax_account:   row.has_tax_account || false,
-      has_errors:        parseInt(row.error_count) > 0,
+      connected:                  connectedCount > 0,
+      connected_count:            connectedCount,
+      last_synced:                row.last_synced || null,
+      has_tax_account:            row.has_tax_account || false,
+      has_errors:                 parseInt(row.error_count) > 0,
+      has_inactive_connections:   inactiveCount > 0,
+      inactive_count:             inactiveCount,
     });
   } catch (err) {
     console.error('Status error:', err.message);
