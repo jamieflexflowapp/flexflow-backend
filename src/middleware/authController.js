@@ -31,10 +31,10 @@ try {
 } catch (err) {
   // SendGrid not installed — log code to console during development
   sendVerificationEmail = async (email, name, code) => {
-    console.log(`[DEV EMAIL] Verification code for ${email}: ${code}`);
+    if (process.env.NODE_ENV === 'development') console.log(`[DEV EMAIL] Verification code for ${email}: ${code}`);
   };
   sendWelcomeEmail = async (email, name) => {
-    console.log(`[DEV EMAIL] Welcome email sent to ${email}`);
+    if (process.env.NODE_ENV === 'development') console.log(`[DEV EMAIL] Welcome email sent to ${email}`);
   };
 }
 
@@ -320,7 +320,7 @@ async function login(req, res) {
         process.env.JWT_SECRET,
         { expiresIn: '10m' }
       );
-      console.log("[2FA] Sending requires2fa response, temp_token length:", tempToken.length);
+      if (process.env.NODE_ENV === 'development') console.log("[2FA] Sending requires2fa response, temp_token length:", tempToken.length);
       return res.status(200).json({ requires2fa: true, temp_token: tempToken });
     }
 
