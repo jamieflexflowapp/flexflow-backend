@@ -160,6 +160,13 @@ router.get('/callback', async (req, res) => {
       }
     });
 
+    // Clear any consent_expiring notifications now bank is reconnected
+    await query(
+      `UPDATE notifications SET is_dismissed = true
+       WHERE user_id = $1 AND alert_type = 'consent_expiring'`,
+      [userId]
+    );
+
     // Kick off initial transaction sync (async — don't wait)
     syncTransactionsForUser(userId, access_token, true).catch(err =>
       console.error('Initial sync error:', err.message)
