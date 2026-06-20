@@ -23,7 +23,7 @@ router.get('/me', verifyToken, async (req, res) => {
     const r = await query(
       `SELECT id, full_name, email, plan, income_structure, tax_code,
               is_scottish_taxpayer, onboarding_complete, onboarding_step, director_salary_annual,
-              dividend_frequency, receives_pension
+              dividend_frequency, receives_pension, tax_year_splash_seen
        FROM users WHERE id = $1`,
       [req.user.userId]
     );
@@ -40,8 +40,9 @@ router.get('/me', verifyToken, async (req, res) => {
       onboarding_complete:  !!u.onboarding_complete,
       onboarding_step:      u.onboarding_step,
       director_salary_annual: u.director_salary_annual,
-      dividend_frequency:   u.dividend_frequency,
-      receives_pension:     !!u.receives_pension,
+      dividend_frequency:      u.dividend_frequency,
+      receives_pension:        !!u.receives_pension,
+      tax_year_splash_seen:    u.tax_year_splash_seen || null,
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to load profile' });
@@ -129,6 +130,21 @@ router.delete('/account', verifyToken, async (req, res) => {
   } catch (err) {
     console.error('[DELETE ACCOUNT] FAILED:', err.message);
     res.status(500).json({ error: 'Failed to delete account' });
+  }
+});
+
+// POST /auth/tax-year-splash-seen — mark splash as seen for current tax year
+router.post('/tax-year-splash-seen', verifyToken, async (req, res) => {
+  try {
+    const { getCurrentTaxYear } = require('../utils/taxYear');
+    const taxYear = getCurrentTaxYear();
+    await query(
+      `UPDATE users SET tax_year_splash_seen = $1 WHERE id = $2`,
+      [taxYear, req.user.userId]
+    );
+    res.json({ success: true, tax_year: taxYear });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update tax year splash state' });
   }
 });
 
