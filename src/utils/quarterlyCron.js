@@ -186,15 +186,7 @@ async function logReview(userId, taxYear, quarter, promptSent, suppressReason, s
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function getCurrentTaxYear() {
-  const now   = new Date();
-  const month = now.getMonth() + 1;
-  const day   = now.getDate();
-  const year  = now.getFullYear();
-  const isNew = (month > 4) || (month === 4 && day >= 6);
-  const start = isNew ? year : year - 1;
-  return `${start}/${String(start + 1).slice(-2)}`;
-}
+const { getCurrentTaxYear } = require('./taxYear');
 
 function getCurrentQuarter() {
   const month = new Date().getMonth() + 1;

@@ -287,15 +287,7 @@ async function recalcTaxableProfit(userId) {
 }
 
 // ── Tax year helper ───────────────────────────────────────────────────────────
-function getCurrentTaxYear() {
-  const now   = new Date();
-  const month = now.getMonth() + 1;
-  const day   = now.getDate();
-  const year  = now.getFullYear();
-  const isNewYear = (month > 4) || (month === 4 && day >= 6);
-  const startYear = isNewYear ? year : year - 1;
-  return `${startYear}/${String(startYear + 1).slice(-2)}`;
-}
+const { getCurrentTaxYear } = require('../utils/taxYear');
 
 // ── Record an expense ─────────────────────────────────────────────────────────
 async function recordExpense(userId, transactionId, data) {

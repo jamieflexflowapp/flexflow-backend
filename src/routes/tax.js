@@ -204,16 +204,20 @@ router.get('/self-assessment', async (req, res) => {
       [req.user.userId, taxYear]
     );
 
-    // Get gross income
+    // Get gross income — dynamic tax year start (auto-rolls over each 6 April)
+    const _now = new Date();
+    const _fyYear = (_now.getMonth() > 3 || (_now.getMonth() === 3 && _now.getDate() >= 6))
+      ? _now.getFullYear() : _now.getFullYear() - 1;
+    const _fyStart = `${_fyYear}-04-06`;
     const incomeResult = await query(
       `SELECT COALESCE(SUM(amount), 0) AS gross_income
        FROM transactions
        WHERE user_id = $1
-         AND transaction_date >= '2026-04-06'
+         AND transaction_date >= $2
          AND amount > 0
          AND is_income = true
          AND user_confirmed = true`,
-      [req.user.userId]
+      [req.user.userId, _fyStart]
     );
 
     const estimatedTax  = parseFloat(liabilityResult.rows[0]?.total_tax_liability) || 0;

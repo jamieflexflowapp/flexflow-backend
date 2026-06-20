@@ -238,14 +238,6 @@ async function fireRunwayAlerts(userId, runwayStatus, tpveStatus, runwayWeeks, s
 
 // ── Tax year helper ───────────────────────────────────────────────────────────
 
-function getCurrentTaxYear() {
-  const now   = new Date();
-  const month = now.getMonth() + 1;
-  const day   = now.getDate();
-  const year  = now.getFullYear();
-  const isNew = (month > 4) || (month === 4 && day >= 6);
-  const start = isNew ? year : year - 1;
-  return `${start}/${String(start + 1).slice(-2)}`;
-}
+const { getCurrentTaxYear } = require('../utils/taxYear');
 
 module.exports = { calculateRunway };

@@ -18,6 +18,7 @@ const router  = express.Router();
 const { verifyToken, checkOnboardingComplete } = require('../middleware/auth');
 const { calculateRunway } = require('../engines/runway');
 const { query } = require('../config/database');
+const { getCurrentTaxYear } = require('../utils/taxYear');
 
 router.use(verifyToken, checkOnboardingComplete);
 
@@ -240,16 +241,6 @@ function calcMonthlyEquiv(amount, frequency) {
   case 'weekly':    return Math.round((amount * 52 / 12) * 100) / 100;
   default:          return Math.round(amount * 100) / 100;
   }
-}
-
-function getCurrentTaxYear() {
-  const now   = new Date();
-  const month = now.getMonth() + 1;
-  const day   = now.getDate();
-  const year  = now.getFullYear();
-  const isNew = (month > 4) || (month === 4 && day >= 6);
-  const start = isNew ? year : year - 1;
-  return `${start}/${String(start + 1).slice(-2)}`;
 }
 
 module.exports = router;
